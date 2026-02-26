@@ -3,8 +3,9 @@ import { MessageList } from "./components/MessageList";
 import { InputBox } from "./components/InputBox";
 import { SuggestedActions } from "./components/SuggestedActions";
 
-const API_URL = "http://localhost:4000/dealer/ai";
-const DB_API_URL = "http://localhost:4000/dealer/db/inventory";
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:4000").replace(/\/+$/, "");
+const API_URL = `${API_BASE_URL}/dealer/ai`;
+const DB_API_URL = `${API_BASE_URL}/dealer/db/inventory`;
 
 const EMPTY_FORM = {
   make: "",
