@@ -1,0 +1,4 @@
+interface:
+  display_name: "WhatsApp Dealer Master"
+  short_description: "High-conversion WhatsApp dealer behavior"
+  default_prompt: "Use $whatsapp-dealer-master to run the dealership WhatsApp assistant with strict inventory and appointment rules."

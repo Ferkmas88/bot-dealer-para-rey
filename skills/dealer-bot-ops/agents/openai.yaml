@@ -1,0 +1,4 @@
+interface:
+  display_name: "Dealer Bot Ops"
+  short_description: "Run and debug dealer bot end-to-end"
+  default_prompt: "Use $dealer-bot-ops to validate backend, AI provider, SQLite inventory, and WhatsApp webhook flow."
