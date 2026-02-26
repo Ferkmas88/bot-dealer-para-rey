@@ -61,7 +61,7 @@ dealerAiRouter.get("/dealer/ai/connection", async (_req, res) => {
   const status = await checkLlmConnection();
   const openaiModel = process.env.OPENAI_MODEL || "gpt-4o-mini";
   const cerebrasModel = process.env.CEREBRAS_MODEL || "llama3.1-8b";
-  const geminiModel = process.env.GEMINI_MODEL || "gemini-1.5-flash";
+  const geminiModel = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
   if (status.connected) {
     return res.json({

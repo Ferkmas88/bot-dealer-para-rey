@@ -66,7 +66,7 @@ async function generateWithGemini(messages) {
   const configured = process.env.GEMINI_MODEL || "";
   const modelCandidates = configured
     ? [configured]
-    : ["gemini-2.0-flash", "gemini-1.5-flash-latest", "gemini-1.5-pro-latest"];
+    : ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest"];
   const prompt = toFlatPrompt(messages);
   let lastErr = "Gemini request failed";
 
