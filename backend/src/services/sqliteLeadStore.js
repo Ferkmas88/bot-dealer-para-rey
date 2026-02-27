@@ -164,7 +164,7 @@ export function getSqliteHealth() {
 export function getInventoryOverview() {
   const total = db.prepare("SELECT COUNT(*) AS value FROM inventory WHERE status = 'available'").get()?.value ?? 0;
   const rows = db
-    .prepare("SELECT make, COUNT(*) AS count FROM inventory WHERE status = 'available' GROUP BY make ORDER BY count DESC, make ASC")
+    .prepare("SELECT TRIM(make) AS make, COUNT(*) AS count FROM inventory WHERE status = 'available' GROUP BY TRIM(make) ORDER BY count DESC, make ASC")
     .all();
 
   return {
@@ -178,8 +178,8 @@ export function searchAvailableInventory({ make = null, budgetMax = null, color 
   const params = [];
 
   if (make) {
-    conditions.push("LOWER(make) = LOWER(?)");
-    params.push(make);
+    conditions.push("LOWER(TRIM(make)) = LOWER(TRIM(?))");
+    params.push(String(make));
   }
 
   if (budgetMax && Number.isFinite(Number(budgetMax))) {
@@ -247,8 +247,8 @@ export function searchSimilarAvailableInventory({ budgetMax = null, color = null
 export function getMinAvailablePriceByMake(make) {
   if (!make) return null;
   const row = db
-    .prepare("SELECT MIN(price) AS min_price FROM inventory WHERE status = 'available' AND LOWER(make) = LOWER(?)")
-    .get(make);
+    .prepare("SELECT MIN(price) AS min_price FROM inventory WHERE status = 'available' AND LOWER(TRIM(make)) = LOWER(TRIM(?))")
+    .get(String(make));
   if (!row || row.min_price == null) return null;
   return Number(row.min_price);
 }
@@ -295,15 +295,15 @@ export function createInventoryUnit(input) {
     `
   ).run(
     nextId,
-    input.make,
-    input.model,
+    String(input.make || "").trim(),
+    String(input.model || "").trim(),
     Number(input.year),
     Number(input.price),
     Number(input.mileage),
-    input.transmission,
-    input.fuel_type,
-    input.color,
-    input.status,
+    String(input.transmission || "").trim(),
+    String(input.fuel_type || "").trim(),
+    String(input.color || "").trim(),
+    String(input.status || "available").trim(),
     Number(input.featured) ? 1 : 0,
     now,
     now
@@ -317,15 +317,15 @@ export function updateInventoryUnit(id, input) {
   if (!existing) return null;
 
   const next = {
-    make: input.make ?? existing.make,
-    model: input.model ?? existing.model,
+    make: input.make != null ? String(input.make).trim() : existing.make,
+    model: input.model != null ? String(input.model).trim() : existing.model,
     year: input.year ?? existing.year,
     price: input.price ?? existing.price,
     mileage: input.mileage ?? existing.mileage,
-    transmission: input.transmission ?? existing.transmission,
-    fuel_type: input.fuel_type ?? existing.fuel_type,
-    color: input.color ?? existing.color,
-    status: input.status ?? existing.status,
+    transmission: input.transmission != null ? String(input.transmission).trim() : existing.transmission,
+    fuel_type: input.fuel_type != null ? String(input.fuel_type).trim() : existing.fuel_type,
+    color: input.color != null ? String(input.color).trim() : existing.color,
+    status: input.status != null ? String(input.status).trim() : existing.status,
     featured: input.featured ?? existing.featured
   };
 

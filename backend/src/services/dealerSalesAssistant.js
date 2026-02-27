@@ -744,6 +744,12 @@ function applyInventoryExperience(message, entities, baseReply, updatedContext =
 
   if (exactMatches.length) {
     const lines = exactMatches.map((item) => `- ${formatInventoryUnit(item)}`).join("\n");
+    if (exactMatches.length === 1 && brand) {
+      return {
+        reply: `Si, tengo 1 ${brand} disponible ahora:\n${lines}\nQuieres verlo hoy 4pm o manana 11am?`,
+        mediaUrl: null
+      };
+    }
     return {
       reply: pickOne([
         `Te comparto opciones disponibles:\n${lines}\nTe funciona hoy 4pm o manana 11am para verlas?`,
