@@ -164,7 +164,7 @@ function hasBudgetSignal(text) {
 }
 
 function hasDatabaseLookupSignal(text) {
-  return /(inventario|disponibles|disponible|stock|unidades|precio|cu[aá]nto|cost|costo|marca|modelo|presupuesto|budget|pickup|truck|suv|sedan|camioneta)/i.test(
+  return /(inventario|disponibles|disponible|stock|unidades|precio|cu[aá]nto|cost|costo|marca|modelo|presupuesto|budget|pickup|truck|suv|sedan|camioneta|tienen|tiene|muestr|ensena|mostrar|toyota|honda|ford|nissan|chevrolet|hyundai|kia|mazda|bmw|audi)/i.test(
     text || ""
   );
 }
@@ -697,14 +697,15 @@ function applyInventoryExperience(message, entities, baseReply, updatedContext =
   const color = updatedContext.color ?? null;
   const requestedColor = requestedColorLabel(message);
   const shouldSearchInventory =
-    hasDatabaseLookupSignal(message) &&
-    (asksInventory ||
-      Boolean(brandInMessage) ||
-      pickup ||
-      entities.budget != null ||
-      requestedColor != null ||
-      detectBodyPreference(message) != null ||
-      hasInventorySignal(message));
+    asksInventory ||
+    Boolean(brandInMessage) ||
+    Boolean(requestedBrand) ||
+    pickup ||
+    entities.budget != null ||
+    requestedColor != null ||
+    detectBodyPreference(message) != null ||
+    hasInventorySignal(message) ||
+    hasDatabaseLookupSignal(message);
 
   if (asksInventory && !brand) {
     return { reply: buildInventorySummaryReply(), mediaUrl: null };

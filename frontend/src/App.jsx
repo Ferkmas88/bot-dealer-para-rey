@@ -228,9 +228,12 @@ export default function App() {
     <main className="app">
       <section className="crm-shell">
         <header className="topbar">
-          <div>
-            <p className="eyebrow">Empire Rey Dealer CRM</p>
-            <h1>Centro de Operaciones</h1>
+          <div className="brand-block">
+            <img src="/2026-01-14.webp" alt="Empire Rey logo" className="brand-logo" />
+            <div>
+              <p className="eyebrow">Empire Rey Dealer CRM</p>
+              <h1>Centro de Operaciones</h1>
+            </div>
           </div>
           <div className="topbar-actions">
             <button type="button" className="secondary-btn" onClick={loadInventory} disabled={inventoryLoading}>
