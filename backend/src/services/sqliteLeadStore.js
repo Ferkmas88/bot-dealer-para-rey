@@ -63,6 +63,77 @@ db.exec(`
   );
 `);
 
+const DEFAULT_INVENTORY = [
+  {
+    make: "nissan",
+    model: "altima",
+    year: 2005,
+    price: 5000,
+    mileage: 80000,
+    transmission: "good",
+    fuel_type: "bad",
+    color: "white",
+    status: "available",
+    featured: 0
+  },
+  {
+    make: "Toyota",
+    model: "corolla",
+    year: 2006,
+    price: 5000,
+    mileage: 80000,
+    transmission: "buena",
+    fuel_type: "bien",
+    color: "rojo",
+    status: "available",
+    featured: 0
+  }
+];
+
+function ensureDefaultInventorySeed() {
+  const count = db.prepare("SELECT COUNT(*) AS value FROM inventory").get()?.value ?? 0;
+  if (count > 0) return;
+
+  const insertSeedStmt = db.prepare(`
+    INSERT INTO inventory (
+      id, make, model, year, price, mileage, transmission, fuel_type, color, status, featured, created_at, updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const now = new Date().toISOString();
+  db.exec("BEGIN");
+  try {
+    DEFAULT_INVENTORY.forEach((unit, index) => {
+      insertSeedStmt.run(
+        index + 1,
+        unit.make,
+        unit.model,
+        Number(unit.year),
+        Number(unit.price),
+        Number(unit.mileage),
+        unit.transmission,
+        unit.fuel_type,
+        unit.color,
+        unit.status,
+        Number(unit.featured) ? 1 : 0,
+        now,
+        now
+      );
+    });
+    db.exec("COMMIT");
+  } catch (error) {
+    try {
+      db.exec("ROLLBACK");
+    } catch {
+      // noop
+    }
+    throw error;
+  }
+}
+
+ensureDefaultInventorySeed();
+
 const upsertLeadStmt = db.prepare(`
   INSERT INTO leads (
     session_id, model, budget, date_pref, email, phone, last_intent, last_source, created_at, updated_at
