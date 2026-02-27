@@ -45,7 +45,7 @@ dealerAiRouter.post("/dealer/ai", async (req, res) => {
   const learningState = getLearningState(sessionId);
 
   const aiResult = isInventoryOrBrandRequest(message)
-    ? processDealerSessionMessage(message, session.context, learningState)
+    ? await processDealerSessionMessage(message, session.context, learningState)
     : await processDealerSessionMessageWithLLM(message, session.context, learningState);
 
   saveDealerTurn({

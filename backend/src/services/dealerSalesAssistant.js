@@ -664,12 +664,13 @@ function formatInventoryUnit(unit) {
   return `${unit.year} ${unit.make} ${unit.model} - $${Number(unit.price).toLocaleString("en-US")} - ${Number(unit.mileage).toLocaleString("en-US")} mi`;
 }
 
-function buildAvailableAlternatives(limit = 2) {
-  return searchSimilarAvailableInventory({ limit }).slice(0, limit);
+async function buildAvailableAlternatives(limit = 2) {
+  const rows = await searchSimilarAvailableInventory({ limit });
+  return rows.slice(0, limit);
 }
 
-function buildInventorySummaryReply() {
-  const summary = getInventoryOverview();
+async function buildInventorySummaryReply() {
+  const summary = await getInventoryOverview();
   if (!summary.total) {
     return pickOne([
       "Ahora mismo no tengo unidades disponibles en sistema. Te tomo tus datos y te aviso en cuanto entre inventario?",
@@ -684,7 +685,7 @@ function buildInventorySummaryReply() {
   ]);
 }
 
-function applyInventoryExperience(message, entities, baseReply, updatedContext = {}) {
+async function applyInventoryExperience(message, entities, baseReply, updatedContext = {}) {
   const lower = message.toLowerCase();
   const asksInventory = /(inventario|disponibles|disponible|que marcas|cuantas marcas|cuantos carros|cuantos autos|stock|unidades)/i.test(lower);
   const brandInMessage = normalizeBrandText(message);
@@ -708,7 +709,7 @@ function applyInventoryExperience(message, entities, baseReply, updatedContext =
     hasDatabaseLookupSignal(message);
 
   if (asksInventory && !brand) {
-    return { reply: buildInventorySummaryReply(), mediaUrl: null };
+    return { reply: await buildInventorySummaryReply(), mediaUrl: null };
   }
 
   if (!shouldSearchInventory) {
@@ -716,7 +717,7 @@ function applyInventoryExperience(message, entities, baseReply, updatedContext =
   }
 
   if (requestedBrand && !brandInMessage) {
-    const broadByBody = filterUnitsByBody(searchSimilarAvailableInventory({ pickup, limit: 4 }), bodyPreference).slice(0, 2);
+    const broadByBody = filterUnitsByBody(await searchSimilarAvailableInventory({ pickup, limit: 4 }), bodyPreference).slice(0, 2);
     if (broadByBody.length) {
       const lines = broadByBody.map((item) => `- ${formatInventoryUnit(item)}`).join("\n");
       return {
@@ -733,7 +734,7 @@ function applyInventoryExperience(message, entities, baseReply, updatedContext =
     };
   }
 
-  let exactMatches = searchAvailableInventory({
+  let exactMatches = await searchAvailableInventory({
     make: brand,
     budgetMax: entities.budget ?? null,
     color,
@@ -760,7 +761,7 @@ function applyInventoryExperience(message, entities, baseReply, updatedContext =
   }
 
   if (brand || entities.budget != null || pickup || asksInventory || hasInventorySignal(message) || isAutoDomainMessage(message)) {
-    let similar = searchSimilarAvailableInventory({ budgetMax: entities.budget ?? null, color, pickup, limit: 4 });
+    let similar = await searchSimilarAvailableInventory({ budgetMax: entities.budget ?? null, color, pickup, limit: 4 });
     similar = filterUnitsByBody(similar, bodyPreference).slice(0, 2);
     if (similar.length) {
       const lines = similar.map((item) => `- ${formatInventoryUnit(item)}`).join("\n");
@@ -773,7 +774,7 @@ function applyInventoryExperience(message, entities, baseReply, updatedContext =
       };
     }
 
-    let similarNoBudget = searchSimilarAvailableInventory({ color, pickup, limit: 4 });
+    let similarNoBudget = await searchSimilarAvailableInventory({ color, pickup, limit: 4 });
     similarNoBudget = filterUnitsByBody(similarNoBudget, bodyPreference).slice(0, 2);
     if (similarNoBudget.length) {
       const lines = similarNoBudget.map((item) => `- ${formatInventoryUnit(item)}`).join("\n");
@@ -787,7 +788,7 @@ function applyInventoryExperience(message, entities, baseReply, updatedContext =
     }
 
     if (requestedColor) {
-      const broadByBody = filterUnitsByBody(searchSimilarAvailableInventory({ pickup, limit: 4 }), bodyPreference).slice(0, 2);
+      const broadByBody = filterUnitsByBody(await searchSimilarAvailableInventory({ pickup, limit: 4 }), bodyPreference).slice(0, 2);
       if (broadByBody.length) {
         const lines = broadByBody.map((item) => `- ${formatInventoryUnit(item)}`).join("\n");
         return {
@@ -801,7 +802,7 @@ function applyInventoryExperience(message, entities, baseReply, updatedContext =
       };
     }
 
-    const broadAlternatives = searchSimilarAvailableInventory({ limit: 2 });
+    const broadAlternatives = await searchSimilarAvailableInventory({ limit: 2 });
     if (broadAlternatives.length) {
       const lines = broadAlternatives.slice(0, 2).map((item) => `- ${formatInventoryUnit(item)}`).join("\n");
       return {
@@ -905,7 +906,7 @@ function buildSalesSkill({ context, entities, intent, message }) {
   return { stage, nextObjective, confidence: 0.86 };
 }
 
-export function generateDealerResponse(message, context = {}) {
+export async function generateDealerResponse(message, context = {}) {
   const safeMessage = normalizeText(message);
   const entities = extractEntities(safeMessage);
   const intent = detectSalesIntent(safeMessage);
@@ -936,7 +937,7 @@ export function generateDealerResponse(message, context = {}) {
 
   if (entities.budget && updatedContext.model) {
     const brand = normalizeBrandText(updatedContext.model);
-    const minBrandPrice = getMinAvailablePriceByMake(brand);
+    const minBrandPrice = await getMinAvailablePriceByMake(brand);
 
     if (minBrandPrice && entities.budget < minBrandPrice) {
       reply = `Perfecto, gracias por compartir tu presupuesto de $${entities.budget.toLocaleString("en-US")}. En ${brand} las opciones arrancan cerca de $${minBrandPrice.toLocaleString("en-US")}, pero podemos llegar con financiamiento, enganche flexible o mostrarte alternativas cercanas a tu rango. Prefieres que te cotice mensualidad o que te ensene opciones mas economicas?`;
@@ -966,7 +967,7 @@ export function generateDealerResponse(message, context = {}) {
   return { reply, updatedContext };
 }
 
-export function processDealerSessionMessage(message, context = {}, learningState = {}) {
+export async function processDealerSessionMessage(message, context = {}, learningState = {}) {
   const safeMessage = normalizeText(message);
   if (hasBusinessHoursSignal(safeMessage)) {
     const intent = "question";
@@ -988,11 +989,11 @@ export function processDealerSessionMessage(message, context = {}, learningState
 
   const intent = detectSalesIntent(safeMessage);
   const extracted = extractEntities(safeMessage);
-  const { reply, updatedContext } = generateDealerResponse(safeMessage, context);
+  const { reply, updatedContext } = await generateDealerResponse(safeMessage, context);
   const entities = buildEntitySnapshot(extracted, updatedContext);
 
   const tunedReply = applyLearningReplyTuning({ intent, message: safeMessage, entities, baseReply: reply, learningState });
-  const inventoryEnhancement = applyInventoryExperience(safeMessage, entities, tunedReply, updatedContext);
+  const inventoryEnhancement = await applyInventoryExperience(safeMessage, entities, tunedReply, updatedContext);
   const suggestions = buildSuggestions(intent, entities, safeMessage);
   const skill = buildSalesSkill({ context: updatedContext, entities, intent, message: safeMessage });
 
@@ -1135,7 +1136,7 @@ export async function processDealerSessionMessageWithLLM(message, context = {}, 
   }
 
   if (isPerformanceRequest(safeMessage)) {
-    const alternatives = buildAvailableAlternatives(2);
+    const alternatives = await buildAvailableAlternatives(2);
     const lines = alternatives.map((item) => `- ${formatInventoryUnit(item)}`).join("\n");
     const quickReply = alternatives.length
       ? `No tengo auto de carrera exacto ahora, pero estas opciones estan disponibles:\n${lines}\nTe funciona hoy 4pm o manana 11am para verlas?`
@@ -1198,10 +1199,10 @@ export async function processDealerSessionMessageWithLLM(message, context = {}, 
     Boolean(requestedBrand)
   ) {
     const intent = detectSalesIntent(safeMessage);
-    const { reply, updatedContext } = generateDealerResponse(safeMessage, context);
+    const { reply, updatedContext } = await generateDealerResponse(safeMessage, context);
     const entities = buildEntitySnapshot(extracted, updatedContext);
     const tunedReply = applyLearningReplyTuning({ intent, message: safeMessage, entities, baseReply: reply, learningState });
-    const inventoryEnhancement = applyInventoryExperience(safeMessage, entities, tunedReply, updatedContext);
+    const inventoryEnhancement = await applyInventoryExperience(safeMessage, entities, tunedReply, updatedContext);
     const suggestions = buildSuggestions(intent, entities, safeMessage);
     const skill = buildSalesSkill({ context: updatedContext, entities, intent, message: safeMessage });
 
@@ -1335,7 +1336,7 @@ Return ONLY valid JSON with this shape:
 
     const parsed = safeJsonParse(llmResult.text);
     if (!parsed || typeof parsed !== "object") {
-      return processDealerSessionMessage(safeMessage, context, learningState);
+      return await processDealerSessionMessage(safeMessage, context, learningState);
     }
 
     const intent = normalizeSalesIntent(parsed.intent);
@@ -1355,7 +1356,7 @@ Return ONLY valid JSON with this shape:
       : "Claro, te ayudo con gusto. Que modelo, presupuesto y fecha de compra tienes en mente?";
 
     const tunedReply = applyLearningReplyTuning({ intent, message: safeMessage, entities, baseReply, learningState });
-    const inventoryEnhancement = applyInventoryExperience(safeMessage, entities, tunedReply, updatedContext);
+    const inventoryEnhancement = await applyInventoryExperience(safeMessage, entities, tunedReply, updatedContext);
 
     const suggestions = buildSuggestions(intent, entities, safeMessage);
 
@@ -1372,7 +1373,7 @@ Return ONLY valid JSON with this shape:
       updatedContext
     };
   } catch {
-    return processDealerSessionMessage(safeMessage, context, learningState);
+    return await processDealerSessionMessage(safeMessage, context, learningState);
   }
 }
 

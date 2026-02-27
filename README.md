@@ -26,6 +26,9 @@ Base de proyecto para arrancar un bot AI para concesionario/dealer con:
    - `OPENAI_API_KEY`
    - `OPENAI_MODEL` (ejemplo: `gpt-4o-mini` o `gpt-4.1-mini`)
    - `SYSTEM_PROMPT`
+   - `NEON_DATABASE_URL` (opcional, recomendado para inventario persistente en produccion)
+
+Si `NEON_DATABASE_URL` existe, el inventario usa Postgres (Neon). Si no existe, usa SQLite local.
 
 ## 2) Instalar dependencias
 

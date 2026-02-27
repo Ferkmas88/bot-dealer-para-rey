@@ -25,52 +25,52 @@ const inventoryPatchSchema = inventoryPayloadSchema.partial();
 
 export const dealerDbAdminRouter = Router();
 
-dealerDbAdminRouter.get("/dealer/db/inventory", (req, res) => {
+dealerDbAdminRouter.get("/dealer/db/inventory", async (req, res) => {
   const status = typeof req.query.status === "string" ? req.query.status : null;
-  const rows = listInventory({ status });
+  const rows = await listInventory({ status });
   return res.json({ rows });
 });
 
-dealerDbAdminRouter.get("/dealer/db/inventory/:id", (req, res) => {
-  const row = getInventoryById(req.params.id);
+dealerDbAdminRouter.get("/dealer/db/inventory/:id", async (req, res) => {
+  const row = await getInventoryById(req.params.id);
   if (!row) return res.status(404).json({ error: "Inventory unit not found" });
   return res.json({ row });
 });
 
-dealerDbAdminRouter.post("/dealer/db/inventory", (req, res) => {
+dealerDbAdminRouter.post("/dealer/db/inventory", async (req, res) => {
   const parsed = inventoryPayloadSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: "Invalid inventory payload", details: parsed.error.flatten() });
   }
 
-  const row = createInventoryUnit(parsed.data);
+  const row = await createInventoryUnit(parsed.data);
   return res.status(201).json({ row });
 });
 
-dealerDbAdminRouter.put("/dealer/db/inventory/:id", (req, res) => {
+dealerDbAdminRouter.put("/dealer/db/inventory/:id", async (req, res) => {
   const parsed = inventoryPayloadSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: "Invalid inventory payload", details: parsed.error.flatten() });
   }
 
-  const row = updateInventoryUnit(req.params.id, parsed.data);
+  const row = await updateInventoryUnit(req.params.id, parsed.data);
   if (!row) return res.status(404).json({ error: "Inventory unit not found" });
   return res.json({ row });
 });
 
-dealerDbAdminRouter.patch("/dealer/db/inventory/:id", (req, res) => {
+dealerDbAdminRouter.patch("/dealer/db/inventory/:id", async (req, res) => {
   const parsed = inventoryPatchSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: "Invalid inventory payload", details: parsed.error.flatten() });
   }
 
-  const row = updateInventoryUnit(req.params.id, parsed.data);
+  const row = await updateInventoryUnit(req.params.id, parsed.data);
   if (!row) return res.status(404).json({ error: "Inventory unit not found" });
   return res.json({ row });
 });
 
-dealerDbAdminRouter.delete("/dealer/db/inventory/:id", (req, res) => {
-  const deleted = deleteInventoryUnit(req.params.id);
+dealerDbAdminRouter.delete("/dealer/db/inventory/:id", async (req, res) => {
+  const deleted = await deleteInventoryUnit(req.params.id);
   if (!deleted) return res.status(404).json({ error: "Inventory unit not found" });
   return res.json({ ok: true });
 });
