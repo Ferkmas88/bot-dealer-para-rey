@@ -15,7 +15,7 @@ const app = express();
 const port = process.env.PORT || 4000;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const frontendDistPath = path.resolve(__dirname, "../../frontend/dist");
+const frontendDistPath = path.resolve(__dirname, "../public");
 
 app.use(cors());
 app.use(express.json());
