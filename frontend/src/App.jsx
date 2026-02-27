@@ -3,7 +3,10 @@ import { MessageList } from "./components/MessageList";
 import { InputBox } from "./components/InputBox";
 import { SuggestedActions } from "./components/SuggestedActions";
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:4000").replace(/\/+$/, "");
+const API_BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL ||
+  (typeof window !== "undefined" ? window.location.origin : "http://localhost:4000")
+).replace(/\/+$/, "");
 const API_URL = `${API_BASE_URL}/dealer/ai`;
 const DB_API_URL = `${API_BASE_URL}/dealer/db/inventory`;
 const PANEL_PASSWORD = import.meta.env.VITE_PANEL_PASSWORD || "ReyDealer2026";
