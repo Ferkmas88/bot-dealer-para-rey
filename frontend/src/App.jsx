@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { MessageList } from "./components/MessageList";
 import { InputBox } from "./components/InputBox";
 import { SuggestedActions } from "./components/SuggestedActions";
@@ -6,6 +6,8 @@ import { SuggestedActions } from "./components/SuggestedActions";
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:4000").replace(/\/+$/, "");
 const API_URL = `${API_BASE_URL}/dealer/ai`;
 const DB_API_URL = `${API_BASE_URL}/dealer/db/inventory`;
+const PANEL_PASSWORD = import.meta.env.VITE_PANEL_PASSWORD || "ReyDealer2026";
+const AUTH_STORAGE_KEY = "dealer-panel-auth";
 
 const EMPTY_FORM = {
   make: "",
@@ -21,7 +23,10 @@ const EMPTY_FORM = {
 };
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState("chat");
+  const [isAuthenticated, setIsAuthenticated] = useState(() => sessionStorage.getItem(AUTH_STORAGE_KEY) === "ok");
+  const [passwordInput, setPasswordInput] = useState("");
+  const [authError, setAuthError] = useState("");
+
   const [sessionId, setSessionId] = useState("web-dealer-1");
   const [messages, setMessages] = useState([
     {
@@ -38,6 +43,29 @@ export default function App() {
   const [inventoryError, setInventoryError] = useState("");
   const [inventoryForm, setInventoryForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState(null);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadInventory();
+    }
+  }, [isAuthenticated]);
+
+  function handleLogin(e) {
+    e.preventDefault();
+    if (passwordInput === PANEL_PASSWORD) {
+      sessionStorage.setItem(AUTH_STORAGE_KEY, "ok");
+      setIsAuthenticated(true);
+      setAuthError("");
+      setPasswordInput("");
+      return;
+    }
+    setAuthError("Contrasena incorrecta.");
+  }
+
+  function handleLogout() {
+    sessionStorage.removeItem(AUTH_STORAGE_KEY);
+    setIsAuthenticated(false);
+  }
 
   async function sendMessage(text) {
     if (!text || loading) return;
@@ -117,7 +145,6 @@ export default function App() {
       featured: Number(row.featured) ? 1 : 0
     });
     setEditingId(row.id);
-    setActiveTab("inventory");
   }
 
   async function saveInventoryUnit(e) {
@@ -163,45 +190,55 @@ export default function App() {
     }
   }
 
+  if (!isAuthenticated) {
+    return (
+      <main className="app">
+        <section className="auth-card">
+          <p className="eyebrow">Empire Rey Console</p>
+          <h1>Acceso privado</h1>
+          <p className="subtle">Ingresa la contrasena para abrir el chat y administrar carros.</p>
+          <form className="auth-form" onSubmit={handleLogin}>
+            <input
+              type="password"
+              value={passwordInput}
+              onChange={(e) => setPasswordInput(e.target.value)}
+              placeholder="Contrasena"
+              autoComplete="current-password"
+            />
+            <button type="submit">Entrar</button>
+          </form>
+          {authError ? <p className="error-text">{authError}</p> : null}
+          <p className="hint">Configurable con VITE_PANEL_PASSWORD.</p>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="app">
-      <section className="card">
-        <h1>Dealer Chat Console</h1>
-        <p>Chat comercial + panel visual para administrar inventario SQLite.</p>
-
-        <div className="tabs" role="tablist" aria-label="Secciones">
-          <button
-            type="button"
-            className={`tab-btn ${activeTab === "chat" ? "active" : ""}`}
-            onClick={() => setActiveTab("chat")}
-          >
-            Chat
+      <section className="dashboard">
+        <header className="topbar">
+          <div>
+            <p className="eyebrow">Empire Rey</p>
+            <h1>Chat + Inventario</h1>
+          </div>
+          <button type="button" className="danger-btn" onClick={handleLogout}>
+            Salir
           </button>
-          <button
-            type="button"
-            className={`tab-btn ${activeTab === "inventory" ? "active" : ""}`}
-            onClick={async () => {
-              setActiveTab("inventory");
-              await loadInventory();
-            }}
-          >
-            Inventario DB
-          </button>
-        </div>
+        </header>
 
-        {activeTab === "chat" ? (
-          <>
+        <section className="split-layout">
+          <article className="panel chat-panel">
             <label className="session">
               Session ID
               <input value={sessionId} onChange={(e) => setSessionId(e.target.value)} />
             </label>
-
             <MessageList messages={messages} />
             <SuggestedActions onAction={sendMessage} disabled={loading} />
             <InputBox onSend={sendMessage} disabled={loading} />
-          </>
-        ) : (
-          <section className="inventory-panel">
+          </article>
+
+          <article className="panel inventory-panel">
             <div className="inventory-actions">
               <button type="button" onClick={loadInventory} disabled={inventoryLoading}>
                 {inventoryLoading ? "Cargando..." : "Refrescar"}
@@ -269,8 +306,8 @@ export default function App() {
                 </tbody>
               </table>
             </div>
-          </section>
-        )}
+          </article>
+        </section>
       </section>
     </main>
   );
