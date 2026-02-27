@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { processDealerSessionMessageWithLLM } from "../services/dealerSalesAssistant.js";
+import { processDealerSessionMessage, processDealerSessionMessageWithLLM } from "../services/dealerSalesAssistant.js";
 import { checkLlmConnection } from "../services/openaiClient.js";
 import {
   getDealerSession,
@@ -25,6 +25,12 @@ const feedbackSchema = z.object({
 
 export const dealerAiRouter = Router();
 
+function isInventoryOrBrandRequest(message = "") {
+  return /(inventario|disponible|disponibles|stock|unidad|unidades|muestr|ensena|mostrar|que tienes|tienes|marca|modelo|precio|nissan|toyota|honda|ford|chevrolet|hyundai|kia|mazda|bmw|audi|camry|corolla|civic|altima|sentra)/i.test(
+    message
+  );
+}
+
 dealerAiRouter.post("/dealer/ai", async (req, res) => {
   const parsed = payloadSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -38,7 +44,9 @@ dealerAiRouter.post("/dealer/ai", async (req, res) => {
   const session = getDealerSession(sessionId);
   const learningState = getLearningState(sessionId);
 
-  const aiResult = await processDealerSessionMessageWithLLM(message, session.context, learningState);
+  const aiResult = isInventoryOrBrandRequest(message)
+    ? processDealerSessionMessage(message, session.context, learningState)
+    : await processDealerSessionMessageWithLLM(message, session.context, learningState);
 
   saveDealerTurn({
     sessionId,
