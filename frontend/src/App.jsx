@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { MessageList } from "./components/MessageList";
 import { InputBox } from "./components/InputBox";
 import { SuggestedActions } from "./components/SuggestedActions";
@@ -47,6 +47,14 @@ export default function App() {
   const [inventoryForm, setInventoryForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState(null);
 
+  const kpis = useMemo(() => {
+    const total = inventoryRows.length;
+    const available = inventoryRows.filter((row) => row.status === "available").length;
+    const sold = inventoryRows.filter((row) => row.status === "sold").length;
+    const featured = inventoryRows.filter((row) => Number(row.featured) === 1).length;
+    return { total, available, sold, featured };
+  }, [inventoryRows]);
+
   useEffect(() => {
     if (isAuthenticated) {
       loadInventory();
@@ -90,7 +98,6 @@ export default function App() {
       });
 
       const data = await res.json();
-
       const reply = data?.reply || "Por ahora no pude responder. Intentamos de nuevo en unos segundos?";
       const assistantMsg = {
         id: crypto.randomUUID(),
@@ -199,7 +206,7 @@ export default function App() {
         <section className="auth-card">
           <p className="eyebrow">Empire Rey Console</p>
           <h1>Acceso privado</h1>
-          <p className="subtle">Ingresa la contrasena para abrir el chat y administrar carros.</p>
+          <p className="subtle">Ingresa la contrasena para abrir el CRM comercial.</p>
           <form className="auth-form" onSubmit={handleLogin}>
             <input
               type="password"
@@ -219,19 +226,117 @@ export default function App() {
 
   return (
     <main className="app">
-      <section className="dashboard">
+      <section className="crm-shell">
         <header className="topbar">
           <div>
-            <p className="eyebrow">Empire Rey</p>
-            <h1>Chat + Inventario</h1>
+            <p className="eyebrow">Empire Rey Dealer CRM</p>
+            <h1>Centro de Operaciones</h1>
           </div>
-          <button type="button" className="danger-btn" onClick={handleLogout}>
-            Salir
-          </button>
+          <div className="topbar-actions">
+            <button type="button" className="secondary-btn" onClick={loadInventory} disabled={inventoryLoading}>
+              {inventoryLoading ? "Cargando..." : "Sincronizar"}
+            </button>
+            <button type="button" className="danger-btn" onClick={handleLogout}>
+              Salir
+            </button>
+          </div>
         </header>
 
-        <section className="split-layout">
-          <article className="panel chat-panel">
+        <section className="crm-layout">
+          <section className="crm-main">
+            <section className="kpi-grid">
+              <article className="kpi-card">
+                <p>Inventario total</p>
+                <strong>{kpis.total}</strong>
+              </article>
+              <article className="kpi-card">
+                <p>Disponibles</p>
+                <strong>{kpis.available}</strong>
+              </article>
+              <article className="kpi-card">
+                <p>Vendidos</p>
+                <strong>{kpis.sold}</strong>
+              </article>
+              <article className="kpi-card">
+                <p>Destacados</p>
+                <strong>{kpis.featured}</strong>
+              </article>
+            </section>
+
+            <article className="panel crm-form-panel">
+              <div className="panel-head">
+                <h2>{editingId ? "Editar unidad" : "Registrar unidad"}</h2>
+                <button type="button" className="secondary-btn" onClick={resetInventoryForm}>
+                  {editingId ? "Cancelar edicion" : "Limpiar"}
+                </button>
+              </div>
+              {inventoryError ? <p className="error-text">{inventoryError}</p> : null}
+              <form className="inventory-form" onSubmit={saveInventoryUnit}>
+                <input placeholder="Marca" value={inventoryForm.make} onChange={(e) => setInventoryForm((prev) => ({ ...prev, make: e.target.value }))} required />
+                <input placeholder="Modelo" value={inventoryForm.model} onChange={(e) => setInventoryForm((prev) => ({ ...prev, model: e.target.value }))} required />
+                <input type="number" placeholder="Ano" value={inventoryForm.year} onChange={(e) => setInventoryForm((prev) => ({ ...prev, year: e.target.value }))} required />
+                <input type="number" step="0.01" placeholder="Precio" value={inventoryForm.price} onChange={(e) => setInventoryForm((prev) => ({ ...prev, price: e.target.value }))} required />
+                <input type="number" placeholder="Millaje" value={inventoryForm.mileage} onChange={(e) => setInventoryForm((prev) => ({ ...prev, mileage: e.target.value }))} required />
+                <input placeholder="Transmision" value={inventoryForm.transmission} onChange={(e) => setInventoryForm((prev) => ({ ...prev, transmission: e.target.value }))} required />
+                <input placeholder="Combustible" value={inventoryForm.fuel_type} onChange={(e) => setInventoryForm((prev) => ({ ...prev, fuel_type: e.target.value }))} required />
+                <input placeholder="Color" value={inventoryForm.color} onChange={(e) => setInventoryForm((prev) => ({ ...prev, color: e.target.value }))} required />
+                <select value={inventoryForm.status} onChange={(e) => setInventoryForm((prev) => ({ ...prev, status: e.target.value }))}>
+                  <option value="available">available</option>
+                  <option value="reserved">reserved</option>
+                  <option value="sold">sold</option>
+                </select>
+                <select value={inventoryForm.featured} onChange={(e) => setInventoryForm((prev) => ({ ...prev, featured: Number(e.target.value) }))}>
+                  <option value={0}>No destacado</option>
+                  <option value={1}>Destacado</option>
+                </select>
+                <button type="submit">{editingId ? "Actualizar unidad" : "Crear unidad"}</button>
+              </form>
+            </article>
+
+            <article className="panel crm-table-panel">
+              <h2>Inventario comercial</h2>
+              <div className="inventory-table-wrap">
+                <table className="inventory-table">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Auto</th>
+                      <th>Precio</th>
+                      <th>Millaje</th>
+                      <th>Status</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {inventoryRows.map((row) => (
+                      <tr key={row.id}>
+                        <td>{row.id}</td>
+                        <td>
+                          {row.year} {row.make} {row.model}
+                        </td>
+                        <td>${Number(row.price || 0).toLocaleString("en-US")}</td>
+                        <td>{Number(row.mileage || 0).toLocaleString("en-US")} mi</td>
+                        <td>{row.status}</td>
+                        <td className="row-actions">
+                          <button type="button" className="secondary-btn" onClick={() => fillFormFromRow(row)}>
+                            Editar
+                          </button>
+                          <button type="button" className="danger-btn" onClick={() => removeInventoryUnit(row.id)}>
+                            Eliminar
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </article>
+          </section>
+
+          <aside className="panel crm-chat">
+            <div className="panel-head">
+              <h2>Asistente IA</h2>
+            </div>
             <label className="session">
               Session ID
               <input value={sessionId} onChange={(e) => setSessionId(e.target.value)} />
@@ -239,77 +344,7 @@ export default function App() {
             <MessageList messages={messages} />
             <SuggestedActions onAction={sendMessage} disabled={loading} />
             <InputBox onSend={sendMessage} disabled={loading} />
-          </article>
-
-          <article className="panel inventory-panel">
-            <div className="inventory-actions">
-              <button type="button" onClick={loadInventory} disabled={inventoryLoading}>
-                {inventoryLoading ? "Cargando..." : "Refrescar"}
-              </button>
-              <button type="button" className="secondary-btn" onClick={resetInventoryForm}>
-                {editingId ? "Cancelar edicion" : "Limpiar formulario"}
-              </button>
-            </div>
-
-            {inventoryError ? <p className="error-text">{inventoryError}</p> : null}
-
-            <form className="inventory-form" onSubmit={saveInventoryUnit}>
-              <input placeholder="Marca" value={inventoryForm.make} onChange={(e) => setInventoryForm((prev) => ({ ...prev, make: e.target.value }))} required />
-              <input placeholder="Modelo" value={inventoryForm.model} onChange={(e) => setInventoryForm((prev) => ({ ...prev, model: e.target.value }))} required />
-              <input type="number" placeholder="Ano" value={inventoryForm.year} onChange={(e) => setInventoryForm((prev) => ({ ...prev, year: e.target.value }))} required />
-              <input type="number" step="0.01" placeholder="Precio" value={inventoryForm.price} onChange={(e) => setInventoryForm((prev) => ({ ...prev, price: e.target.value }))} required />
-              <input type="number" placeholder="Millaje" value={inventoryForm.mileage} onChange={(e) => setInventoryForm((prev) => ({ ...prev, mileage: e.target.value }))} required />
-              <input placeholder="Transmision" value={inventoryForm.transmission} onChange={(e) => setInventoryForm((prev) => ({ ...prev, transmission: e.target.value }))} required />
-              <input placeholder="Combustible" value={inventoryForm.fuel_type} onChange={(e) => setInventoryForm((prev) => ({ ...prev, fuel_type: e.target.value }))} required />
-              <input placeholder="Color" value={inventoryForm.color} onChange={(e) => setInventoryForm((prev) => ({ ...prev, color: e.target.value }))} required />
-              <select value={inventoryForm.status} onChange={(e) => setInventoryForm((prev) => ({ ...prev, status: e.target.value }))}>
-                <option value="available">available</option>
-                <option value="reserved">reserved</option>
-                <option value="sold">sold</option>
-              </select>
-              <select value={inventoryForm.featured} onChange={(e) => setInventoryForm((prev) => ({ ...prev, featured: Number(e.target.value) }))}>
-                <option value={0}>No destacado</option>
-                <option value={1}>Destacado</option>
-              </select>
-              <button type="submit">{editingId ? "Actualizar unidad" : "Crear unidad"}</button>
-            </form>
-
-            <div className="inventory-table-wrap">
-              <table className="inventory-table">
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>Auto</th>
-                    <th>Precio</th>
-                    <th>Millaje</th>
-                    <th>Status</th>
-                    <th>Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {inventoryRows.map((row) => (
-                    <tr key={row.id}>
-                      <td>{row.id}</td>
-                      <td>
-                        {row.year} {row.make} {row.model}
-                      </td>
-                      <td>${Number(row.price || 0).toLocaleString("en-US")}</td>
-                      <td>{Number(row.mileage || 0).toLocaleString("en-US")} mi</td>
-                      <td>{row.status}</td>
-                      <td className="row-actions">
-                        <button type="button" className="secondary-btn" onClick={() => fillFormFromRow(row)}>
-                          Editar
-                        </button>
-                        <button type="button" className="danger-btn" onClick={() => removeInventoryUnit(row.id)}>
-                          Eliminar
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </article>
+          </aside>
         </section>
       </section>
     </main>
