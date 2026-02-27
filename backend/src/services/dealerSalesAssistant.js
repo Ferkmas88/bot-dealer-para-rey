@@ -1182,6 +1182,35 @@ export async function processDealerSessionMessageWithLLM(message, context = {}, 
     };
   }
 
+  // Hard guard: inventory requests must be answered from SQLite-driven logic only.
+  const brandInMessage = normalizeBrandText(safeMessage);
+  const requestedBrand = extractRequestedBrand(safeMessage);
+  if (
+    hasDatabaseLookupSignal(safeMessage) ||
+    hasInventorySignal(safeMessage) ||
+    Boolean(brandInMessage) ||
+    Boolean(requestedBrand)
+  ) {
+    const intent = detectSalesIntent(safeMessage);
+    const { reply, updatedContext } = generateDealerResponse(safeMessage, context);
+    const entities = buildEntitySnapshot(extracted, updatedContext);
+    const tunedReply = applyLearningReplyTuning({ intent, message: safeMessage, entities, baseReply: reply, learningState });
+    const inventoryEnhancement = applyInventoryExperience(safeMessage, entities, tunedReply, updatedContext);
+    const suggestions = buildSuggestions(intent, entities, safeMessage);
+    const skill = buildSalesSkill({ context: updatedContext, entities, intent, message: safeMessage });
+
+    return {
+      reply: inventoryEnhancement.reply,
+      intent,
+      entities,
+      suggestions,
+      skill,
+      source: "inventory-db-fastpath",
+      mediaUrl: inventoryEnhancement.mediaUrl,
+      updatedContext
+    };
+  }
+
   // Fast path for simple greetings to reduce latency and avoid repetitive inventory replies.
   if (isGreetingOnly(safeMessage)) {
     const quickReply = pickOne([
