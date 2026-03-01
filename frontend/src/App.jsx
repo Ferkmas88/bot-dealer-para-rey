@@ -83,6 +83,7 @@ export default function App() {
   const [manualReplySuccess, setManualReplySuccess] = useState("");
   const [manualSending, setManualSending] = useState(false);
   const [botUpdating, setBotUpdating] = useState(false);
+  const [inboxNewConversations, setInboxNewConversations] = useState(0);
   const selectedSessionRef = useRef("");
 
   const kpis = useMemo(() => {
@@ -111,6 +112,31 @@ export default function App() {
     if (isAuthenticated) {
       loadInventory();
     }
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let isMounted = true;
+
+    const run = async () => {
+      try {
+        const res = await fetch(`${CONVERSATIONS_API_URL}?limit=200`);
+        const data = await res.json();
+        const rows = Array.isArray(data?.rows) ? data.rows : [];
+        if (!isMounted) return;
+        const newCount = rows.filter((row) => Number(row.unread_count || 0) > 0).length;
+        setInboxNewConversations(newCount);
+      } catch {
+        if (isMounted) setInboxNewConversations(0);
+      }
+    };
+
+    run();
+    const timer = setInterval(run, 10000);
+    return () => {
+      isMounted = false;
+      clearInterval(timer);
+    };
   }, [isAuthenticated]);
 
   useEffect(() => {
@@ -495,7 +521,7 @@ export default function App() {
               className={activeView === "inbox" ? "active-btn" : "secondary-btn"}
               onClick={() => setActiveView("inbox")}
             >
-              Inbox WhatsApp ({unreadTotal})
+              Inbox WhatsApp ({activeView === "inbox" ? unreadTotal : inboxNewConversations})
             </button>
             {activeView === "crm" ? (
               <button type="button" className="secondary-btn" onClick={loadInventory} disabled={inventoryLoading}>
