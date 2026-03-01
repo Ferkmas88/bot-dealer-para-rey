@@ -12,6 +12,7 @@ const DB_API_URL = `${API_BASE_URL}/dealer/db/inventory`;
 const CONVERSATIONS_API_URL = `${API_BASE_URL}/dealer/db/conversations`;
 const PANEL_PASSWORD = import.meta.env.VITE_PANEL_PASSWORD || "ReyDealer2026";
 const AUTH_STORAGE_KEY = "dealer-panel-auth";
+const INBOX_SEEN_STORAGE_KEY = "dealer-inbox-seen-counts-v1";
 
 const EMPTY_FORM = {
   make: "",
@@ -44,6 +45,25 @@ function formatTimestamp(value) {
     hour: "2-digit",
     minute: "2-digit"
   });
+}
+
+function loadSeenCounts() {
+  try {
+    const raw = localStorage.getItem(INBOX_SEEN_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveSeenCounts(value) {
+  try {
+    localStorage.setItem(INBOX_SEEN_STORAGE_KEY, JSON.stringify(value || {}));
+  } catch {
+    // noop
+  }
 }
 
 export default function App() {
@@ -85,6 +105,7 @@ export default function App() {
   const [botUpdating, setBotUpdating] = useState(false);
   const [inboxUnreadMessages, setInboxUnreadMessages] = useState(0);
   const selectedSessionRef = useRef("");
+  const seenCountsRef = useRef(loadSeenCounts());
 
   const kpis = useMemo(() => {
     const total = inventoryRows.length;
@@ -122,7 +143,21 @@ export default function App() {
       try {
         const res = await fetch(`${CONVERSATIONS_API_URL}?limit=200`);
         const data = await res.json();
-        const rows = Array.isArray(data?.rows) ? data.rows : [];
+        const incomingRows = Array.isArray(data?.rows) ? data.rows : [];
+        const seenCounts = { ...(seenCountsRef.current || {}) };
+        const rows = incomingRows.map((row) => {
+          const sessionKey = row.session_id;
+          const currentUserCount = Number(row.user_messages || 0);
+          if (typeof seenCounts[sessionKey] !== "number") {
+            seenCounts[sessionKey] = currentUserCount;
+          }
+          const computedUnread = Math.max(0, currentUserCount - Number(seenCounts[sessionKey] || 0));
+          const backendUnread = Number(row.unread_count);
+          const unreadCount = Number.isFinite(backendUnread) ? backendUnread : computedUnread;
+          return { ...row, unread_count: unreadCount };
+        });
+        seenCountsRef.current = seenCounts;
+        saveSeenCounts(seenCounts);
         if (!isMounted) return;
         const unreadMessages = rows.reduce((acc, row) => acc + Number(row.unread_count || 0), 0);
         setInboxUnreadMessages(unreadMessages);
@@ -265,7 +300,21 @@ export default function App() {
       }
       const res = await fetch(`${CONVERSATIONS_API_URL}?${params.toString()}`);
       const data = await res.json();
-      const rows = Array.isArray(data?.rows) ? data.rows : [];
+      const incomingRows = Array.isArray(data?.rows) ? data.rows : [];
+      const seenCounts = { ...(seenCountsRef.current || {}) };
+      const rows = incomingRows.map((row) => {
+        const sessionKey = row.session_id;
+        const currentUserCount = Number(row.user_messages || 0);
+        if (typeof seenCounts[sessionKey] !== "number") {
+          seenCounts[sessionKey] = currentUserCount;
+        }
+        const computedUnread = Math.max(0, currentUserCount - Number(seenCounts[sessionKey] || 0));
+        const backendUnread = Number(row.unread_count);
+        const unreadCount = Number.isFinite(backendUnread) ? backendUnread : computedUnread;
+        return { ...row, unread_count: unreadCount };
+      });
+      seenCountsRef.current = seenCounts;
+      saveSeenCounts(seenCounts);
       if (mountedRef && !mountedRef()) return;
       setConversationRows(rows);
 
@@ -326,6 +375,13 @@ export default function App() {
       await fetch(`${CONVERSATIONS_API_URL}/${encoded}/read`, {
         method: "POST"
       });
+      const seenCounts = { ...(seenCountsRef.current || {}) };
+      const row = conversationRows.find((item) => item.session_id === targetSessionId);
+      if (row) {
+        seenCounts[targetSessionId] = Number(row.user_messages || 0);
+        seenCountsRef.current = seenCounts;
+        saveSeenCounts(seenCounts);
+      }
       setConversationRows((prev) =>
         prev.map((row) =>
           row.session_id === targetSessionId
