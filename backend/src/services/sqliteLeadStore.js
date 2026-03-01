@@ -282,6 +282,67 @@ export function persistDealerFeedbackToSqlite({ sessionId, rating, comment = "",
   insertFeedbackStmt.run(sessionId, rating, comment, reply, new Date().toISOString());
 }
 
+export function listDealerConversations({ limit = 100 } = {}) {
+  const safeLimit = Number.isFinite(Number(limit)) ? Math.max(1, Math.min(500, Number(limit))) : 100;
+
+  const rows = db
+    .prepare(
+      `
+      SELECT
+        m.session_id AS session_id,
+        MAX(m.created_at) AS updated_at,
+        SUM(CASE WHEN m.role = 'user' THEN 1 ELSE 0 END) AS user_messages,
+        SUM(CASE WHEN m.role = 'assistant' THEN 1 ELSE 0 END) AS assistant_messages,
+        (
+          SELECT m2.content
+          FROM messages m2
+          WHERE m2.session_id = m.session_id
+          ORDER BY m2.created_at DESC, m2.id DESC
+          LIMIT 1
+        ) AS last_message,
+        (
+          SELECT m2.role
+          FROM messages m2
+          WHERE m2.session_id = m.session_id
+          ORDER BY m2.created_at DESC, m2.id DESC
+          LIMIT 1
+        ) AS last_role
+      FROM messages m
+      GROUP BY m.session_id
+      ORDER BY updated_at DESC
+      LIMIT ?
+      `
+    )
+    .all(safeLimit);
+
+  return rows;
+}
+
+export function listDealerMessagesBySession(sessionId, { limit = 500 } = {}) {
+  const safeLimit = Number.isFinite(Number(limit)) ? Math.max(1, Math.min(2000, Number(limit))) : 500;
+
+  const rows = db
+    .prepare(
+      `
+      SELECT
+        id,
+        session_id,
+        role,
+        content,
+        intent,
+        source,
+        created_at
+      FROM messages
+      WHERE session_id = ?
+      ORDER BY created_at ASC, id ASC
+      LIMIT ?
+      `
+    )
+    .all(sessionId, safeLimit);
+
+  return rows;
+}
+
 export function getSqliteHealth() {
   try {
     db.prepare("SELECT 1").get();

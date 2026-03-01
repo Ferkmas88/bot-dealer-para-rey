@@ -9,6 +9,7 @@ const API_BASE_URL = (
 ).replace(/\/+$/, "");
 const API_URL = `${API_BASE_URL}/dealer/ai`;
 const DB_API_URL = `${API_BASE_URL}/dealer/db/inventory`;
+const CONVERSATIONS_API_URL = `${API_BASE_URL}/dealer/db/conversations`;
 const PANEL_PASSWORD = import.meta.env.VITE_PANEL_PASSWORD || "ReyDealer2026";
 const AUTH_STORAGE_KEY = "dealer-panel-auth";
 
@@ -25,10 +26,31 @@ const EMPTY_FORM = {
   featured: 0
 };
 
+function formatSessionLabel(sessionId) {
+  if (!sessionId) return "Sin session";
+  if (sessionId.startsWith("wa:whatsapp:")) return sessionId.replace("wa:whatsapp:", "");
+  if (sessionId.startsWith("wa_meta:")) return `+${sessionId.replace("wa_meta:", "")}`;
+  if (sessionId.startsWith("wa:")) return sessionId.replace("wa:", "");
+  return sessionId;
+}
+
+function formatTimestamp(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("en-US", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(() => sessionStorage.getItem(AUTH_STORAGE_KEY) === "ok");
   const [passwordInput, setPasswordInput] = useState("");
   const [authError, setAuthError] = useState("");
+  const [activeView, setActiveView] = useState("crm");
 
   const [sessionId, setSessionId] = useState("web-dealer-1");
   const [messages, setMessages] = useState([
@@ -47,6 +69,14 @@ export default function App() {
   const [inventoryForm, setInventoryForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState(null);
 
+  const [conversationRows, setConversationRows] = useState([]);
+  const [conversationsLoading, setConversationsLoading] = useState(false);
+  const [conversationsError, setConversationsError] = useState("");
+  const [selectedSessionId, setSelectedSessionId] = useState("");
+  const [selectedMessages, setSelectedMessages] = useState([]);
+  const [messagesLoading, setMessagesLoading] = useState(false);
+  const [messagesError, setMessagesError] = useState("");
+
   const kpis = useMemo(() => {
     const total = inventoryRows.length;
     const available = inventoryRows.filter((row) => row.status === "available").length;
@@ -55,11 +85,48 @@ export default function App() {
     return { total, available, sold, featured };
   }, [inventoryRows]);
 
+  const selectedThread = useMemo(
+    () => conversationRows.find((row) => row.session_id === selectedSessionId) || null,
+    [conversationRows, selectedSessionId]
+  );
+
   useEffect(() => {
     if (isAuthenticated) {
       loadInventory();
     }
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated || activeView !== "inbox") return;
+    let isMounted = true;
+
+    const run = async () => {
+      await loadConversations({ keepSelection: true, mountedRef: () => isMounted });
+    };
+
+    run();
+    const timer = setInterval(run, 10000);
+    return () => {
+      isMounted = false;
+      clearInterval(timer);
+    };
+  }, [isAuthenticated, activeView]);
+
+  useEffect(() => {
+    if (!selectedSessionId || activeView !== "inbox") return;
+    let isMounted = true;
+
+    const run = async () => {
+      await loadMessagesForSession(selectedSessionId, { mountedRef: () => isMounted });
+    };
+
+    run();
+    const timer = setInterval(run, 6000);
+    return () => {
+      isMounted = false;
+      clearInterval(timer);
+    };
+  }, [selectedSessionId, activeView]);
 
   function handleLogin(e) {
     e.preventDefault();
@@ -133,6 +200,64 @@ export default function App() {
       setInventoryError("No pude cargar inventario.");
     } finally {
       setInventoryLoading(false);
+    }
+  }
+
+  async function loadConversations({ keepSelection = false, mountedRef = null } = {}) {
+    if (!keepSelection) setConversationsLoading(true);
+    setConversationsError("");
+
+    try {
+      const res = await fetch(`${CONVERSATIONS_API_URL}?limit=200`);
+      const data = await res.json();
+      const rows = Array.isArray(data?.rows) ? data.rows : [];
+      if (mountedRef && !mountedRef()) return;
+      setConversationRows(rows);
+
+      if (!rows.length) {
+        setSelectedSessionId("");
+        setSelectedMessages([]);
+        return;
+      }
+
+      if (!selectedSessionId) {
+        setSelectedSessionId(rows[0].session_id);
+        return;
+      }
+
+      const stillExists = rows.some((row) => row.session_id === selectedSessionId);
+      if (!stillExists) {
+        setSelectedSessionId(rows[0].session_id);
+      }
+    } catch {
+      if (!mountedRef || mountedRef()) {
+        setConversationsError("No pude cargar conversaciones.");
+      }
+    } finally {
+      if (!keepSelection && (!mountedRef || mountedRef())) {
+        setConversationsLoading(false);
+      }
+    }
+  }
+
+  async function loadMessagesForSession(targetSessionId, { mountedRef = null } = {}) {
+    if (!targetSessionId) return;
+    setMessagesLoading(true);
+    setMessagesError("");
+    try {
+      const encoded = encodeURIComponent(targetSessionId);
+      const res = await fetch(`${CONVERSATIONS_API_URL}/${encoded}/messages?limit=500`);
+      const data = await res.json();
+      if (mountedRef && !mountedRef()) return;
+      setSelectedMessages(Array.isArray(data?.rows) ? data.rows : []);
+    } catch {
+      if (!mountedRef || mountedRef()) {
+        setMessagesError("No pude cargar mensajes de este chat.");
+      }
+    } finally {
+      if (!mountedRef || mountedRef()) {
+        setMessagesLoading(false);
+      }
     }
   }
 
@@ -236,119 +361,198 @@ export default function App() {
             </div>
           </div>
           <div className="topbar-actions">
-            <button type="button" className="secondary-btn" onClick={loadInventory} disabled={inventoryLoading}>
-              {inventoryLoading ? "Cargando..." : "Sincronizar"}
+            <button
+              type="button"
+              className={activeView === "crm" ? "active-btn" : "secondary-btn"}
+              onClick={() => setActiveView("crm")}
+            >
+              CRM
             </button>
+            <button
+              type="button"
+              className={activeView === "inbox" ? "active-btn" : "secondary-btn"}
+              onClick={() => setActiveView("inbox")}
+            >
+              Inbox WhatsApp
+            </button>
+            {activeView === "crm" ? (
+              <button type="button" className="secondary-btn" onClick={loadInventory} disabled={inventoryLoading}>
+                {inventoryLoading ? "Cargando..." : "Sincronizar"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="secondary-btn"
+                onClick={() => loadConversations({ keepSelection: false })}
+                disabled={conversationsLoading}
+              >
+                {conversationsLoading ? "Cargando..." : "Refrescar chats"}
+              </button>
+            )}
             <button type="button" className="danger-btn" onClick={handleLogout}>
               Salir
             </button>
           </div>
         </header>
 
-        <section className="crm-layout">
-          <section className="crm-main">
-            <section className="kpi-grid">
-              <article className="kpi-card">
-                <p>Inventario total</p>
-                <strong>{kpis.total}</strong>
+        {activeView === "crm" ? (
+          <section className="crm-layout">
+            <section className="crm-main">
+              <section className="kpi-grid">
+                <article className="kpi-card">
+                  <p>Inventario total</p>
+                  <strong>{kpis.total}</strong>
+                </article>
+                <article className="kpi-card">
+                  <p>Disponibles</p>
+                  <strong>{kpis.available}</strong>
+                </article>
+                <article className="kpi-card">
+                  <p>Vendidos</p>
+                  <strong>{kpis.sold}</strong>
+                </article>
+                <article className="kpi-card">
+                  <p>Destacados</p>
+                  <strong>{kpis.featured}</strong>
+                </article>
+              </section>
+
+              <article className="panel crm-form-panel">
+                <div className="panel-head">
+                  <h2>{editingId ? "Editar unidad" : "Registrar unidad"}</h2>
+                  <button type="button" className="secondary-btn" onClick={resetInventoryForm}>
+                    {editingId ? "Cancelar edicion" : "Limpiar"}
+                  </button>
+                </div>
+                {inventoryError ? <p className="error-text">{inventoryError}</p> : null}
+                <form className="inventory-form" onSubmit={saveInventoryUnit}>
+                  <input placeholder="Marca" value={inventoryForm.make} onChange={(e) => setInventoryForm((prev) => ({ ...prev, make: e.target.value }))} required />
+                  <input placeholder="Modelo" value={inventoryForm.model} onChange={(e) => setInventoryForm((prev) => ({ ...prev, model: e.target.value }))} required />
+                  <input type="number" placeholder="Ano" value={inventoryForm.year} onChange={(e) => setInventoryForm((prev) => ({ ...prev, year: e.target.value }))} required />
+                  <input type="number" step="0.01" placeholder="Precio" value={inventoryForm.price} onChange={(e) => setInventoryForm((prev) => ({ ...prev, price: e.target.value }))} required />
+                  <input type="number" placeholder="Millaje" value={inventoryForm.mileage} onChange={(e) => setInventoryForm((prev) => ({ ...prev, mileage: e.target.value }))} required />
+                  <input placeholder="Transmision" value={inventoryForm.transmission} onChange={(e) => setInventoryForm((prev) => ({ ...prev, transmission: e.target.value }))} required />
+                  <input placeholder="Combustible" value={inventoryForm.fuel_type} onChange={(e) => setInventoryForm((prev) => ({ ...prev, fuel_type: e.target.value }))} required />
+                  <input placeholder="Color" value={inventoryForm.color} onChange={(e) => setInventoryForm((prev) => ({ ...prev, color: e.target.value }))} required />
+                  <select value={inventoryForm.status} onChange={(e) => setInventoryForm((prev) => ({ ...prev, status: e.target.value }))}>
+                    <option value="available">available</option>
+                    <option value="reserved">reserved</option>
+                    <option value="sold">sold</option>
+                  </select>
+                  <select value={inventoryForm.featured} onChange={(e) => setInventoryForm((prev) => ({ ...prev, featured: Number(e.target.value) }))}>
+                    <option value={0}>No destacado</option>
+                    <option value={1}>Destacado</option>
+                  </select>
+                  <button type="submit">{editingId ? "Actualizar unidad" : "Crear unidad"}</button>
+                </form>
               </article>
-              <article className="kpi-card">
-                <p>Disponibles</p>
-                <strong>{kpis.available}</strong>
-              </article>
-              <article className="kpi-card">
-                <p>Vendidos</p>
-                <strong>{kpis.sold}</strong>
-              </article>
-              <article className="kpi-card">
-                <p>Destacados</p>
-                <strong>{kpis.featured}</strong>
+
+              <article className="panel crm-table-panel">
+                <h2>Inventario comercial</h2>
+                <div className="inventory-table-wrap">
+                  <table className="inventory-table">
+                    <thead>
+                      <tr>
+                        <th>ID</th>
+                        <th>Auto</th>
+                        <th>Precio</th>
+                        <th>Millaje</th>
+                        <th>Status</th>
+                        <th>Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {inventoryRows.map((row) => (
+                        <tr key={row.id}>
+                          <td>{row.id}</td>
+                          <td>
+                            {row.year} {row.make} {row.model}
+                          </td>
+                          <td>${Number(row.price || 0).toLocaleString("en-US")}</td>
+                          <td>{Number(row.mileage || 0).toLocaleString("en-US")} mi</td>
+                          <td>{row.status}</td>
+                          <td className="row-actions">
+                            <button type="button" className="secondary-btn" onClick={() => fillFormFromRow(row)}>
+                              Editar
+                            </button>
+                            <button type="button" className="danger-btn" onClick={() => removeInventoryUnit(row.id)}>
+                              Eliminar
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </article>
             </section>
 
-            <article className="panel crm-form-panel">
+            <aside className="panel crm-chat">
               <div className="panel-head">
-                <h2>{editingId ? "Editar unidad" : "Registrar unidad"}</h2>
-                <button type="button" className="secondary-btn" onClick={resetInventoryForm}>
-                  {editingId ? "Cancelar edicion" : "Limpiar"}
-                </button>
+                <h2>Asistente IA</h2>
               </div>
-              {inventoryError ? <p className="error-text">{inventoryError}</p> : null}
-              <form className="inventory-form" onSubmit={saveInventoryUnit}>
-                <input placeholder="Marca" value={inventoryForm.make} onChange={(e) => setInventoryForm((prev) => ({ ...prev, make: e.target.value }))} required />
-                <input placeholder="Modelo" value={inventoryForm.model} onChange={(e) => setInventoryForm((prev) => ({ ...prev, model: e.target.value }))} required />
-                <input type="number" placeholder="Ano" value={inventoryForm.year} onChange={(e) => setInventoryForm((prev) => ({ ...prev, year: e.target.value }))} required />
-                <input type="number" step="0.01" placeholder="Precio" value={inventoryForm.price} onChange={(e) => setInventoryForm((prev) => ({ ...prev, price: e.target.value }))} required />
-                <input type="number" placeholder="Millaje" value={inventoryForm.mileage} onChange={(e) => setInventoryForm((prev) => ({ ...prev, mileage: e.target.value }))} required />
-                <input placeholder="Transmision" value={inventoryForm.transmission} onChange={(e) => setInventoryForm((prev) => ({ ...prev, transmission: e.target.value }))} required />
-                <input placeholder="Combustible" value={inventoryForm.fuel_type} onChange={(e) => setInventoryForm((prev) => ({ ...prev, fuel_type: e.target.value }))} required />
-                <input placeholder="Color" value={inventoryForm.color} onChange={(e) => setInventoryForm((prev) => ({ ...prev, color: e.target.value }))} required />
-                <select value={inventoryForm.status} onChange={(e) => setInventoryForm((prev) => ({ ...prev, status: e.target.value }))}>
-                  <option value="available">available</option>
-                  <option value="reserved">reserved</option>
-                  <option value="sold">sold</option>
-                </select>
-                <select value={inventoryForm.featured} onChange={(e) => setInventoryForm((prev) => ({ ...prev, featured: Number(e.target.value) }))}>
-                  <option value={0}>No destacado</option>
-                  <option value={1}>Destacado</option>
-                </select>
-                <button type="submit">{editingId ? "Actualizar unidad" : "Crear unidad"}</button>
-              </form>
-            </article>
-
-            <article className="panel crm-table-panel">
-              <h2>Inventario comercial</h2>
-              <div className="inventory-table-wrap">
-                <table className="inventory-table">
-                  <thead>
-                    <tr>
-                      <th>ID</th>
-                      <th>Auto</th>
-                      <th>Precio</th>
-                      <th>Millaje</th>
-                      <th>Status</th>
-                      <th>Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {inventoryRows.map((row) => (
-                      <tr key={row.id}>
-                        <td>{row.id}</td>
-                        <td>
-                          {row.year} {row.make} {row.model}
-                        </td>
-                        <td>${Number(row.price || 0).toLocaleString("en-US")}</td>
-                        <td>{Number(row.mileage || 0).toLocaleString("en-US")} mi</td>
-                        <td>{row.status}</td>
-                        <td className="row-actions">
-                          <button type="button" className="secondary-btn" onClick={() => fillFormFromRow(row)}>
-                            Editar
-                          </button>
-                          <button type="button" className="danger-btn" onClick={() => removeInventoryUnit(row.id)}>
-                            Eliminar
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </article>
+              <label className="session">
+                Session ID
+                <input value={sessionId} onChange={(e) => setSessionId(e.target.value)} />
+              </label>
+              <MessageList messages={messages} />
+              <SuggestedActions onAction={sendMessage} disabled={loading} />
+              <InputBox onSend={sendMessage} disabled={loading} />
+            </aside>
           </section>
+        ) : (
+          <section className="panel inbox-shell">
+            <div className="inbox-layout">
+              <aside className="thread-list">
+                <div className="thread-head">
+                  <h2>Conversaciones</h2>
+                  <p className="subtle">{conversationRows.length} contactos</p>
+                </div>
+                {conversationsError ? <p className="error-text">{conversationsError}</p> : null}
+                <div className="thread-scroll">
+                  {conversationRows.map((row) => (
+                    <button
+                      key={row.session_id}
+                      type="button"
+                      className={`thread-item ${selectedSessionId === row.session_id ? "active" : ""}`}
+                      onClick={() => setSelectedSessionId(row.session_id)}
+                    >
+                      <div className="thread-title">{formatSessionLabel(row.session_id)}</div>
+                      <div className="thread-preview">{row.last_message || "Sin mensajes"}</div>
+                      <div className="thread-meta">
+                        <span>{formatTimestamp(row.updated_at)}</span>
+                        <span>U:{row.user_messages || 0} / B:{row.assistant_messages || 0}</span>
+                      </div>
+                    </button>
+                  ))}
+                  {!conversationRows.length && !conversationsLoading ? <p className="subtle">No hay conversaciones todavia.</p> : null}
+                </div>
+              </aside>
 
-          <aside className="panel crm-chat">
-            <div className="panel-head">
-              <h2>Asistente IA</h2>
+              <section className="thread-chat">
+                <div className="thread-chat-head">
+                  <h2>{selectedThread ? formatSessionLabel(selectedThread.session_id) : "Selecciona un chat"}</h2>
+                  <p className="subtle">{selectedThread ? selectedThread.session_id : "Esperando seleccion..."}</p>
+                </div>
+                {messagesError ? <p className="error-text">{messagesError}</p> : null}
+                <div className="thread-messages">
+                  {selectedMessages.map((msg) => (
+                    <article key={msg.id} className={`thread-bubble ${msg.role === "assistant" ? "assistant" : "user"}`}>
+                      <div className="thread-bubble-top">
+                        <strong>{msg.role === "assistant" ? "Bot" : "Cliente"}</strong>
+                        <span>{formatTimestamp(msg.created_at)}</span>
+                      </div>
+                      <p>{msg.content}</p>
+                    </article>
+                  ))}
+                  {!selectedMessages.length && !messagesLoading ? (
+                    <p className="subtle">{selectedSessionId ? "Este contacto aun no tiene mensajes guardados." : "Elige una conversacion de la izquierda."}</p>
+                  ) : null}
+                </div>
+              </section>
             </div>
-            <label className="session">
-              Session ID
-              <input value={sessionId} onChange={(e) => setSessionId(e.target.value)} />
-            </label>
-            <MessageList messages={messages} />
-            <SuggestedActions onAction={sendMessage} disabled={loading} />
-            <InputBox onSend={sendMessage} disabled={loading} />
-          </aside>
-        </section>
+          </section>
+        )}
       </section>
     </main>
   );

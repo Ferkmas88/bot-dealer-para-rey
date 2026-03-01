@@ -310,6 +310,11 @@ button:hover {
   color: #efcb79;
 }
 
+.active-btn {
+  background: linear-gradient(140deg, var(--gold), var(--gold-2));
+  color: #231700;
+}
+
 .danger-btn {
   background: linear-gradient(145deg, #9c1a1a, var(--red));
   border-color: #7f1414;
@@ -318,6 +323,127 @@ button:hover {
 
 .error-text {
   color: #ff8686;
+}
+
+.inbox-shell {
+  margin-top: 14px;
+  min-height: 760px;
+}
+
+.inbox-layout {
+  display: grid;
+  grid-template-columns: 360px minmax(0, 1fr);
+  gap: 12px;
+  min-height: 720px;
+}
+
+.thread-list {
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: #121212;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+}
+
+.thread-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.thread-scroll {
+  overflow: auto;
+  display: grid;
+  gap: 8px;
+}
+
+.thread-item {
+  text-align: left;
+  border: 1px solid #4a3814;
+  border-radius: 10px;
+  padding: 10px;
+  background: #18140b;
+  color: var(--ink);
+}
+
+.thread-item.active {
+  border-color: #d2a949;
+  background: #251a0c;
+}
+
+.thread-title {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.thread-preview {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.thread-meta {
+  margin-top: 8px;
+  display: flex;
+  justify-content: space-between;
+  color: #ddbe7f;
+  font-size: 12px;
+}
+
+.thread-chat {
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: #101010;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+}
+
+.thread-chat-head {
+  border-bottom: 1px solid var(--line-soft);
+  padding-bottom: 8px;
+}
+
+.thread-chat-head h2 {
+  margin-bottom: 4px;
+}
+
+.thread-messages {
+  margin-top: 10px;
+  overflow: auto;
+  display: grid;
+  gap: 8px;
+  max-height: 640px;
+}
+
+.thread-bubble {
+  border: 1px solid #503b15;
+  border-radius: 10px;
+  background: #1a140a;
+  padding: 10px;
+}
+
+.thread-bubble.assistant {
+  border-color: #2f2f2f;
+  background: #171717;
+}
+
+.thread-bubble-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.thread-bubble p {
+  margin: 6px 0 0;
 }
 
 button:disabled {
@@ -332,6 +458,10 @@ button:disabled {
 
   .crm-chat {
     min-height: auto;
+  }
+
+  .inbox-layout {
+    grid-template-columns: 1fr;
   }
 }
 

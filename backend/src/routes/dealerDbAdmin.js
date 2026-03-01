@@ -4,6 +4,8 @@ import {
   createInventoryUnit,
   deleteInventoryUnit,
   getInventoryById,
+  listDealerConversations,
+  listDealerMessagesBySession,
   listInventory,
   updateInventoryUnit
 } from "../services/sqliteLeadStore.js";
@@ -73,4 +75,17 @@ dealerDbAdminRouter.delete("/dealer/db/inventory/:id", async (req, res) => {
   const deleted = await deleteInventoryUnit(req.params.id);
   if (!deleted) return res.status(404).json({ error: "Inventory unit not found" });
   return res.json({ ok: true });
+});
+
+dealerDbAdminRouter.get("/dealer/db/conversations", (req, res) => {
+  const limit = typeof req.query.limit === "string" ? Number(req.query.limit) : 100;
+  const rows = listDealerConversations({ limit });
+  return res.json({ rows });
+});
+
+dealerDbAdminRouter.get("/dealer/db/conversations/:sessionId/messages", (req, res) => {
+  const sessionId = req.params.sessionId;
+  const limit = typeof req.query.limit === "string" ? Number(req.query.limit) : 500;
+  const rows = listDealerMessagesBySession(sessionId, { limit });
+  return res.json({ rows });
 });
