@@ -434,6 +434,10 @@ button:hover {
   padding-bottom: 8px;
 }
 
+.mobile-back-btn {
+  margin-bottom: 8px;
+}
+
 .thread-chat-head h2 {
   margin-bottom: 4px;
 }
@@ -510,6 +514,15 @@ button:disabled {
 
   .inventory-form {
     grid-template-columns: repeat(2, minmax(110px, 1fr));
+  }
+
+  .thread-list,
+  .thread-chat {
+    min-height: 72vh;
+  }
+
+  .thread-messages {
+    max-height: 56vh;
   }
 }
 

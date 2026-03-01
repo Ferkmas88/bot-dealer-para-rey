@@ -67,6 +67,11 @@ function saveSeenCounts(value) {
 }
 
 export default function App() {
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.matchMedia("(max-width: 860px)").matches;
+  });
+  const [mobileInboxPanel, setMobileInboxPanel] = useState("list");
   const [isAuthenticated, setIsAuthenticated] = useState(() => sessionStorage.getItem(AUTH_STORAGE_KEY) === "ok");
   const [passwordInput, setPasswordInput] = useState("");
   const [authError, setAuthError] = useState("");
@@ -134,6 +139,24 @@ export default function App() {
       loadInventory();
     }
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const media = window.matchMedia("(max-width: 860px)");
+    const apply = () => {
+      const mobile = media.matches;
+      setIsMobile(mobile);
+      if (!mobile) {
+        setMobileInboxPanel("chat");
+      } else if (!selectedSessionRef.current) {
+        setMobileInboxPanel("list");
+      }
+    };
+
+    apply();
+    media.addEventListener("change", apply);
+    return () => media.removeEventListener("change", apply);
+  }, []);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -396,6 +419,7 @@ export default function App() {
 
   async function handleSelectConversation(targetSessionId) {
     setSelectedSessionId(targetSessionId);
+    if (isMobile) setMobileInboxPanel("chat");
     setManualReplyError("");
     setManualReplySuccess("");
     await markThreadAsRead(targetSessionId);
@@ -707,6 +731,7 @@ export default function App() {
         ) : (
           <section className="panel inbox-shell">
             <div className="inbox-layout">
+              {!isMobile || mobileInboxPanel === "list" ? (
               <aside className="thread-list">
                 <div className="thread-head">
                   <h2>Conversaciones</h2>
@@ -745,9 +770,16 @@ export default function App() {
                   {!conversationRows.length && !conversationsLoading ? <p className="subtle">No hay conversaciones todavia.</p> : null}
                 </div>
               </aside>
+              ) : null}
 
+              {!isMobile || mobileInboxPanel === "chat" ? (
               <section className="thread-chat">
                 <div className="thread-chat-head">
+                  {isMobile ? (
+                    <button type="button" className="secondary-btn mobile-back-btn" onClick={() => setMobileInboxPanel("list")}>
+                      Volver
+                    </button>
+                  ) : null}
                   <h2>{selectedThread ? formatSessionLabel(selectedThread.session_id) : "Selecciona un chat"}</h2>
                   <p className="subtle">{selectedThread ? selectedThread.session_id : "Esperando seleccion..."}</p>
                   {selectedSessionId ? (
@@ -799,6 +831,7 @@ export default function App() {
                 {manualReplyError ? <p className="error-text">{manualReplyError}</p> : null}
                 {manualReplySuccess ? <p className="subtle">{manualReplySuccess}</p> : null}
               </section>
+              ) : null}
             </div>
           </section>
         )}
