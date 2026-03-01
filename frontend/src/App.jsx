@@ -83,7 +83,7 @@ export default function App() {
   const [manualReplySuccess, setManualReplySuccess] = useState("");
   const [manualSending, setManualSending] = useState(false);
   const [botUpdating, setBotUpdating] = useState(false);
-  const [inboxNewConversations, setInboxNewConversations] = useState(0);
+  const [inboxUnreadMessages, setInboxUnreadMessages] = useState(0);
   const selectedSessionRef = useRef("");
 
   const kpis = useMemo(() => {
@@ -124,10 +124,10 @@ export default function App() {
         const data = await res.json();
         const rows = Array.isArray(data?.rows) ? data.rows : [];
         if (!isMounted) return;
-        const newCount = rows.filter((row) => Number(row.unread_count || 0) > 0).length;
-        setInboxNewConversations(newCount);
+        const unreadMessages = rows.reduce((acc, row) => acc + Number(row.unread_count || 0), 0);
+        setInboxUnreadMessages(unreadMessages);
       } catch {
-        if (isMounted) setInboxNewConversations(0);
+        if (isMounted) setInboxUnreadMessages(0);
       }
     };
 
@@ -521,7 +521,7 @@ export default function App() {
               className={activeView === "inbox" ? "active-btn" : "secondary-btn"}
               onClick={() => setActiveView("inbox")}
             >
-              Inbox WhatsApp ({activeView === "inbox" ? unreadTotal : inboxNewConversations})
+              Inbox WhatsApp ({activeView === "inbox" ? unreadTotal : inboxUnreadMessages})
             </button>
             {activeView === "crm" ? (
               <button type="button" className="secondary-btn" onClick={loadInventory} disabled={inventoryLoading}>
@@ -654,7 +654,7 @@ export default function App() {
               <aside className="thread-list">
                 <div className="thread-head">
                   <h2>Conversaciones</h2>
-                  <p className="subtle">{conversationRows.length} contactos / {unreadTotal} no leidos</p>
+                  <p className="subtle">{conversationRows.length} contactos / {unreadTotal} mensajes sin leer</p>
                 </div>
                 <input
                   className="thread-search"
