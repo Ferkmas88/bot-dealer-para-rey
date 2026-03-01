@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { MessageList } from "./components/MessageList";
 import { InputBox } from "./components/InputBox";
 import { SuggestedActions } from "./components/SuggestedActions";
@@ -83,6 +83,7 @@ export default function App() {
   const [manualReplySuccess, setManualReplySuccess] = useState("");
   const [manualSending, setManualSending] = useState(false);
   const [botUpdating, setBotUpdating] = useState(false);
+  const selectedSessionRef = useRef("");
 
   const kpis = useMemo(() => {
     const total = inventoryRows.length;
@@ -101,6 +102,10 @@ export default function App() {
     () => conversationRows.reduce((acc, row) => acc + Number(row.unread_count || 0), 0),
     [conversationRows]
   );
+
+  useEffect(() => {
+    selectedSessionRef.current = selectedSessionId;
+  }, [selectedSessionId]);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -244,12 +249,14 @@ export default function App() {
         return;
       }
 
-      if (!selectedSessionId) {
+      const currentSelectedSessionId = selectedSessionRef.current;
+
+      if (!currentSelectedSessionId) {
         setSelectedSessionId(rows[0].session_id);
         return;
       }
 
-      const stillExists = rows.some((row) => row.session_id === selectedSessionId);
+      const stillExists = rows.some((row) => row.session_id === currentSelectedSessionId);
       if (!stillExists) {
         setSelectedSessionId(rows[0].session_id);
       }
@@ -275,7 +282,6 @@ export default function App() {
       if (mountedRef && !mountedRef()) return;
       setSelectedMessages(Array.isArray(data?.rows) ? data.rows : []);
       setSelectedSettings(data?.settings || { bot_enabled: 1, last_read_at: null });
-      await markThreadAsRead(targetSessionId);
     } catch {
       if (!mountedRef || mountedRef()) {
         setMessagesError("No pude cargar mensajes de este chat.");
@@ -489,7 +495,7 @@ export default function App() {
               className={activeView === "inbox" ? "active-btn" : "secondary-btn"}
               onClick={() => setActiveView("inbox")}
             >
-              Inbox WhatsApp {unreadTotal > 0 ? `(${unreadTotal})` : ""}
+              Inbox WhatsApp ({unreadTotal})
             </button>
             {activeView === "crm" ? (
               <button type="button" className="secondary-btn" onClick={loadInventory} disabled={inventoryLoading}>
@@ -636,7 +642,7 @@ export default function App() {
                     <button
                       key={row.session_id}
                       type="button"
-                      className={`thread-item ${selectedSessionId === row.session_id ? "active" : ""}`}
+                      className={`thread-item ${selectedSessionId === row.session_id ? "active" : ""} ${Number(row.unread_count || 0) > 0 ? "unread" : ""}`}
                       onClick={() => handleSelectConversation(row.session_id)}
                     >
                       <div className="thread-title">

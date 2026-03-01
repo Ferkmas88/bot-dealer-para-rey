@@ -379,6 +379,11 @@ button:hover {
   background: #251a0c;
 }
 
+.thread-item.unread:not(.active) {
+  border-color: #c52828;
+  background: #2a140f;
+}
+
 .thread-title {
   font-weight: 700;
   font-size: 14px;
