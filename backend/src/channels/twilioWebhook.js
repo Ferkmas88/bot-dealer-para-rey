@@ -2,6 +2,7 @@
 import twilio from "twilio";
 import { processDealerSessionMessageWithLLM } from "../services/dealerSalesAssistant.js";
 import { getDealerSession, getLearningState, saveDealerTurn } from "../services/dealerSessionStore.js";
+import { getConversationSettings, persistIncomingUserMessage } from "../services/sqliteLeadStore.js";
 
 export const twilioWebhookRouter = express.Router();
 
@@ -28,6 +29,20 @@ twilioWebhookRouter.post("/whatsapp", async (req, res) => {
   const sessionId = `wa:${from}`;
 
   try {
+    const settings = getConversationSettings(sessionId);
+    const botEnabled = Number(settings?.bot_enabled ?? 1) === 1;
+
+    if (!botEnabled) {
+      persistIncomingUserMessage({
+        sessionId,
+        userMessage: incomingText,
+        source: "bot-disabled"
+      });
+
+      const twiml = new twilio.twiml.MessagingResponse();
+      return res.type("text/xml").send(twiml.toString());
+    }
+
     const session = getDealerSession(sessionId);
     const learningState = getLearningState(sessionId);
 

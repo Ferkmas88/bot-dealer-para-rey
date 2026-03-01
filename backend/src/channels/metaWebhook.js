@@ -1,6 +1,7 @@
-﻿import express from "express";
+import express from "express";
 import { processDealerSessionMessageWithLLM } from "../services/dealerSalesAssistant.js";
 import { getDealerSession, getLearningState, saveDealerTurn } from "../services/dealerSessionStore.js";
+import { getConversationSettings, persistIncomingUserMessage } from "../services/sqliteLeadStore.js";
 
 export const metaWebhookRouter = express.Router();
 
@@ -95,7 +96,6 @@ metaWebhookRouter.get("/whatsapp", (req, res) => {
 });
 
 metaWebhookRouter.post("/whatsapp", async (req, res) => {
-  // Respond fast to Meta first; process messages in same request for simplicity.
   const incoming = extractIncomingMessages(req.body);
 
   if (!incoming.length) {
@@ -105,6 +105,18 @@ metaWebhookRouter.post("/whatsapp", async (req, res) => {
   try {
     for (const msg of incoming) {
       const sessionId = `wa_meta:${msg.from}`;
+      const settings = getConversationSettings(sessionId);
+      const botEnabled = Number(settings?.bot_enabled ?? 1) === 1;
+
+      if (!botEnabled) {
+        persistIncomingUserMessage({
+          sessionId,
+          userMessage: msg.body,
+          source: "bot-disabled"
+        });
+        continue;
+      }
+
       const session = getDealerSession(sessionId);
       const learningState = getLearningState(sessionId);
 

@@ -74,8 +74,15 @@ export default function App() {
   const [conversationsError, setConversationsError] = useState("");
   const [selectedSessionId, setSelectedSessionId] = useState("");
   const [selectedMessages, setSelectedMessages] = useState([]);
+  const [selectedSettings, setSelectedSettings] = useState({ bot_enabled: 1, last_read_at: null });
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [messagesError, setMessagesError] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [manualReplyText, setManualReplyText] = useState("");
+  const [manualReplyError, setManualReplyError] = useState("");
+  const [manualReplySuccess, setManualReplySuccess] = useState("");
+  const [manualSending, setManualSending] = useState(false);
+  const [botUpdating, setBotUpdating] = useState(false);
 
   const kpis = useMemo(() => {
     const total = inventoryRows.length;
@@ -88,6 +95,11 @@ export default function App() {
   const selectedThread = useMemo(
     () => conversationRows.find((row) => row.session_id === selectedSessionId) || null,
     [conversationRows, selectedSessionId]
+  );
+
+  const unreadTotal = useMemo(
+    () => conversationRows.reduce((acc, row) => acc + Number(row.unread_count || 0), 0),
+    [conversationRows]
   );
 
   useEffect(() => {
@@ -111,6 +123,14 @@ export default function App() {
       clearInterval(timer);
     };
   }, [isAuthenticated, activeView]);
+
+  useEffect(() => {
+    if (!isAuthenticated || activeView !== "inbox") return;
+    const timer = setTimeout(() => {
+      loadConversations({ keepSelection: false });
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   useEffect(() => {
     if (!selectedSessionId || activeView !== "inbox") return;
@@ -208,7 +228,11 @@ export default function App() {
     setConversationsError("");
 
     try {
-      const res = await fetch(`${CONVERSATIONS_API_URL}?limit=200`);
+      const params = new URLSearchParams({ limit: "200" });
+      if (searchQuery.trim()) {
+        params.set("query", searchQuery.trim());
+      }
+      const res = await fetch(`${CONVERSATIONS_API_URL}?${params.toString()}`);
       const data = await res.json();
       const rows = Array.isArray(data?.rows) ? data.rows : [];
       if (mountedRef && !mountedRef()) return;
@@ -250,6 +274,8 @@ export default function App() {
       const data = await res.json();
       if (mountedRef && !mountedRef()) return;
       setSelectedMessages(Array.isArray(data?.rows) ? data.rows : []);
+      setSelectedSettings(data?.settings || { bot_enabled: 1, last_read_at: null });
+      await markThreadAsRead(targetSessionId);
     } catch {
       if (!mountedRef || mountedRef()) {
         setMessagesError("No pude cargar mensajes de este chat.");
@@ -258,6 +284,96 @@ export default function App() {
       if (!mountedRef || mountedRef()) {
         setMessagesLoading(false);
       }
+    }
+  }
+
+  async function markThreadAsRead(targetSessionId) {
+    if (!targetSessionId) return;
+    try {
+      const encoded = encodeURIComponent(targetSessionId);
+      await fetch(`${CONVERSATIONS_API_URL}/${encoded}/read`, {
+        method: "POST"
+      });
+      setConversationRows((prev) =>
+        prev.map((row) =>
+          row.session_id === targetSessionId
+            ? { ...row, unread_count: 0 }
+            : row
+        )
+      );
+    } catch {
+      // noop
+    }
+  }
+
+  async function handleSelectConversation(targetSessionId) {
+    setSelectedSessionId(targetSessionId);
+    setManualReplyError("");
+    setManualReplySuccess("");
+    await markThreadAsRead(targetSessionId);
+  }
+
+  async function toggleBotForSelectedContact() {
+    if (!selectedSessionId || botUpdating) return;
+    const nextEnabled = Number(selectedSettings?.bot_enabled ?? 1) !== 1;
+    setBotUpdating(true);
+    try {
+      const encoded = encodeURIComponent(selectedSessionId);
+      const res = await fetch(`${CONVERSATIONS_API_URL}/${encoded}/bot`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: nextEnabled })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "No se pudo actualizar bot");
+
+      setSelectedSettings(data?.settings || { bot_enabled: nextEnabled ? 1 : 0, last_read_at: null });
+      setConversationRows((prev) =>
+        prev.map((row) =>
+          row.session_id === selectedSessionId
+            ? { ...row, bot_enabled: nextEnabled ? 1 : 0 }
+            : row
+        )
+      );
+    } catch {
+      setMessagesError("No pude actualizar Bot ON/OFF.");
+    } finally {
+      setBotUpdating(false);
+    }
+  }
+
+  async function sendManualReply(e) {
+    e.preventDefault();
+    if (!selectedSessionId || manualSending) return;
+    if (!selectedSessionId.startsWith("wa:")) {
+      setManualReplyError("Respuesta manual disponible solo para chats Twilio (wa:).");
+      return;
+    }
+    const message = manualReplyText.trim();
+    if (!message) return;
+
+    setManualReplyError("");
+    setManualReplySuccess("");
+    setManualSending(true);
+
+    try {
+      const encoded = encodeURIComponent(selectedSessionId);
+      const res = await fetch(`${CONVERSATIONS_API_URL}/${encoded}/reply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "No se pudo enviar");
+
+      setManualReplyText("");
+      setManualReplySuccess("Mensaje enviado.");
+      await loadMessagesForSession(selectedSessionId);
+      await loadConversations({ keepSelection: true });
+    } catch (error) {
+      setManualReplyError(error?.message || "No pude enviar mensaje manual.");
+    } finally {
+      setManualSending(false);
     }
   }
 
@@ -373,7 +489,7 @@ export default function App() {
               className={activeView === "inbox" ? "active-btn" : "secondary-btn"}
               onClick={() => setActiveView("inbox")}
             >
-              Inbox WhatsApp
+              Inbox WhatsApp {unreadTotal > 0 ? `(${unreadTotal})` : ""}
             </button>
             {activeView === "crm" ? (
               <button type="button" className="secondary-btn" onClick={loadInventory} disabled={inventoryLoading}>
@@ -506,8 +622,14 @@ export default function App() {
               <aside className="thread-list">
                 <div className="thread-head">
                   <h2>Conversaciones</h2>
-                  <p className="subtle">{conversationRows.length} contactos</p>
+                  <p className="subtle">{conversationRows.length} contactos / {unreadTotal} no leidos</p>
                 </div>
+                <input
+                  className="thread-search"
+                  placeholder="Buscar numero o session..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
                 {conversationsError ? <p className="error-text">{conversationsError}</p> : null}
                 <div className="thread-scroll">
                   {conversationRows.map((row) => (
@@ -515,13 +637,20 @@ export default function App() {
                       key={row.session_id}
                       type="button"
                       className={`thread-item ${selectedSessionId === row.session_id ? "active" : ""}`}
-                      onClick={() => setSelectedSessionId(row.session_id)}
+                      onClick={() => handleSelectConversation(row.session_id)}
                     >
-                      <div className="thread-title">{formatSessionLabel(row.session_id)}</div>
+                      <div className="thread-title">
+                        {formatSessionLabel(row.session_id)}
+                        {Number(row.unread_count || 0) > 0 ? (
+                          <span className="thread-unread">{row.unread_count}</span>
+                        ) : null}
+                      </div>
                       <div className="thread-preview">{row.last_message || "Sin mensajes"}</div>
                       <div className="thread-meta">
                         <span>{formatTimestamp(row.updated_at)}</span>
-                        <span>U:{row.user_messages || 0} / B:{row.assistant_messages || 0}</span>
+                        <span>
+                          {Number(row.bot_enabled ?? 1) === 1 ? "Bot ON" : "Bot OFF"} / U:{row.user_messages || 0} B:{row.assistant_messages || 0}
+                        </span>
                       </div>
                     </button>
                   ))}
@@ -533,6 +662,16 @@ export default function App() {
                 <div className="thread-chat-head">
                   <h2>{selectedThread ? formatSessionLabel(selectedThread.session_id) : "Selecciona un chat"}</h2>
                   <p className="subtle">{selectedThread ? selectedThread.session_id : "Esperando seleccion..."}</p>
+                  {selectedSessionId ? (
+                    <div className="thread-actions">
+                      <button type="button" className="secondary-btn" onClick={toggleBotForSelectedContact} disabled={botUpdating}>
+                        {botUpdating ? "Guardando..." : Number(selectedSettings?.bot_enabled ?? 1) === 1 ? "Bot ON (clic para OFF)" : "Bot OFF (clic para ON)"}
+                      </button>
+                      <button type="button" className="secondary-btn" onClick={() => markThreadAsRead(selectedSessionId)}>
+                        Marcar leido
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
                 {messagesError ? <p className="error-text">{messagesError}</p> : null}
                 <div className="thread-messages">
@@ -549,6 +688,28 @@ export default function App() {
                     <p className="subtle">{selectedSessionId ? "Este contacto aun no tiene mensajes guardados." : "Elige una conversacion de la izquierda."}</p>
                   ) : null}
                 </div>
+                <form className="manual-reply" onSubmit={sendManualReply}>
+                  <input
+                    placeholder={
+                      !selectedSessionId
+                        ? "Selecciona un chat para responder"
+                        : selectedSessionId.startsWith("wa:")
+                          ? "Responder manualmente..."
+                          : "Solo chats Twilio permiten respuesta manual"
+                    }
+                    value={manualReplyText}
+                    onChange={(e) => setManualReplyText(e.target.value)}
+                    disabled={!selectedSessionId || manualSending || !selectedSessionId.startsWith("wa:")}
+                  />
+                  <button
+                    type="submit"
+                    disabled={!selectedSessionId || manualSending || !manualReplyText.trim() || !selectedSessionId.startsWith("wa:")}
+                  >
+                    {manualSending ? "Enviando..." : "Enviar manual"}
+                  </button>
+                </form>
+                {manualReplyError ? <p className="error-text">{manualReplyError}</p> : null}
+                {manualReplySuccess ? <p className="subtle">{manualReplySuccess}</p> : null}
               </section>
             </div>
           </section>

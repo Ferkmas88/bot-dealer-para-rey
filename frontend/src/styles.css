@@ -354,6 +354,11 @@ button:hover {
   margin-bottom: 10px;
 }
 
+.thread-search {
+  width: 100%;
+  margin-bottom: 10px;
+}
+
 .thread-scroll {
   overflow: auto;
   display: grid;
@@ -377,6 +382,20 @@ button:hover {
 .thread-title {
   font-weight: 700;
   font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.thread-unread {
+  min-width: 20px;
+  text-align: center;
+  border-radius: 999px;
+  padding: 2px 7px;
+  background: #c52828;
+  color: #fff;
+  font-size: 12px;
 }
 
 .thread-preview {
@@ -414,6 +433,13 @@ button:hover {
   margin-bottom: 4px;
 }
 
+.thread-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .thread-messages {
   margin-top: 10px;
   overflow: auto;
@@ -444,6 +470,13 @@ button:hover {
 
 .thread-bubble p {
   margin: 6px 0 0;
+}
+
+.manual-reply {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
 }
 
 button:disabled {
@@ -492,7 +525,8 @@ button:disabled {
 
   .auth-form,
   .composer,
-  .inventory-form {
+  .inventory-form,
+  .manual-reply {
     grid-template-columns: 1fr;
   }
 }

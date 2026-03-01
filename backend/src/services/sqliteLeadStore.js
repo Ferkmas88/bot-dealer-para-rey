@@ -71,6 +71,13 @@ db.exec(`
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS conversation_settings (
+    session_id TEXT PRIMARY KEY,
+    bot_enabled INTEGER NOT NULL DEFAULT 1,
+    last_read_at TEXT,
+    updated_at TEXT NOT NULL
+  );
 `);
 
 const DEFAULT_INVENTORY = [
@@ -229,6 +236,23 @@ const insertFeedbackStmt = db.prepare(`
   VALUES (?, ?, ?, ?, ?)
 `);
 
+const upsertConversationSettingsStmt = db.prepare(`
+  INSERT INTO conversation_settings (session_id, bot_enabled, last_read_at, updated_at)
+  VALUES (?, ?, ?, ?)
+  ON CONFLICT(session_id) DO UPDATE SET
+    bot_enabled = excluded.bot_enabled,
+    last_read_at = excluded.last_read_at,
+    updated_at = excluded.updated_at
+`);
+
+const markConversationReadStmt = db.prepare(`
+  INSERT INTO conversation_settings (session_id, bot_enabled, last_read_at, updated_at)
+  VALUES (?, 1, ?, ?)
+  ON CONFLICT(session_id) DO UPDATE SET
+    last_read_at = excluded.last_read_at,
+    updated_at = excluded.updated_at
+`);
+
 export function persistDealerTurnToSqlite({ sessionId, userMessage, aiResult, timestamp }) {
   const entities = aiResult?.entities || {};
   const contact = entities.contact || {};
@@ -282,12 +306,64 @@ export function persistDealerFeedbackToSqlite({ sessionId, rating, comment = "",
   insertFeedbackStmt.run(sessionId, rating, comment, reply, new Date().toISOString());
 }
 
-export function listDealerConversations({ limit = 100 } = {}) {
-  const safeLimit = Number.isFinite(Number(limit)) ? Math.max(1, Math.min(500, Number(limit))) : 100;
+export function persistIncomingUserMessage({ sessionId, userMessage = "", source = "manual-mode", intent = null }) {
+  const timestamp = new Date().toISOString();
+  insertMessageStmt.run(sessionId, "user", userMessage, intent, source, timestamp);
+}
 
-  const rows = db
+export function persistOutgoingAssistantMessage({
+  sessionId,
+  assistantMessage = "",
+  source = "manual-agent",
+  intent = "manual_reply"
+}) {
+  const timestamp = new Date().toISOString();
+  insertMessageStmt.run(sessionId, "assistant", assistantMessage, intent, source, timestamp);
+}
+
+export function getConversationSettings(sessionId) {
+  const row = db
     .prepare(
       `
+      SELECT session_id, bot_enabled, last_read_at, updated_at
+      FROM conversation_settings
+      WHERE session_id = ?
+      LIMIT 1
+      `
+    )
+    .get(sessionId);
+
+  if (!row) {
+    return {
+      session_id: sessionId,
+      bot_enabled: 1,
+      last_read_at: null,
+      updated_at: null
+    };
+  }
+
+  return row;
+}
+
+export function setConversationBotEnabled(sessionId, enabled) {
+  const now = new Date().toISOString();
+  const current = getConversationSettings(sessionId);
+  upsertConversationSettingsStmt.run(sessionId, enabled ? 1 : 0, current.last_read_at ?? null, now);
+  return getConversationSettings(sessionId);
+}
+
+export function markConversationRead(sessionId) {
+  const now = new Date().toISOString();
+  markConversationReadStmt.run(sessionId, now, now);
+  return getConversationSettings(sessionId);
+}
+
+export function listDealerConversations({ limit = 100, query = "" } = {}) {
+  const safeLimit = Number.isFinite(Number(limit)) ? Math.max(1, Math.min(500, Number(limit))) : 100;
+  const normalizedQuery = String(query || "").trim().toLowerCase();
+  const hasQuery = normalizedQuery.length > 0;
+
+  const sql = `
       SELECT
         m.session_id AS session_id,
         MAX(m.created_at) AS updated_at,
@@ -306,14 +382,30 @@ export function listDealerConversations({ limit = 100 } = {}) {
           WHERE m2.session_id = m.session_id
           ORDER BY m2.created_at DESC, m2.id DESC
           LIMIT 1
-        ) AS last_role
+        ) AS last_role,
+        COALESCE(s.bot_enabled, 1) AS bot_enabled,
+        s.last_read_at AS last_read_at,
+        (
+          SELECT COUNT(1)
+          FROM messages um
+          WHERE um.session_id = m.session_id
+            AND um.role = 'user'
+            AND (
+              s.last_read_at IS NULL OR um.created_at > s.last_read_at
+            )
+        ) AS unread_count
       FROM messages m
+      LEFT JOIN conversation_settings s ON s.session_id = m.session_id
+      ${hasQuery ? "WHERE LOWER(m.session_id) LIKE ? " : ""}
       GROUP BY m.session_id
       ORDER BY updated_at DESC
       LIMIT ?
-      `
-    )
-    .all(safeLimit);
+    `;
+
+  const statement = db.prepare(sql);
+  const rows = hasQuery
+    ? statement.all(`%${normalizedQuery}%`, safeLimit)
+    : statement.all(safeLimit);
 
   return rows;
 }
