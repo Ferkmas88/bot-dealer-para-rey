@@ -3,6 +3,7 @@ import twilio from "twilio";
 import { processDealerSessionMessageWithLLM } from "../services/dealerSalesAssistant.js";
 import { getDealerSession, getLearningState, saveDealerTurn } from "../services/dealerSessionStore.js";
 import { getConversationSettings, persistIncomingUserMessage } from "../services/sqliteLeadStore.js";
+import { sendInboundWhatsAppPush } from "../services/pushNotifications.js";
 
 export const twilioWebhookRouter = express.Router();
 const cadenceBySession = new Map();
@@ -86,6 +87,7 @@ twilioWebhookRouter.post("/whatsapp", async (req, res) => {
         userMessage: incomingText,
         source: "bot-disabled"
       });
+      sendInboundWhatsAppPush({ sessionId, from, message: incomingText }).catch(() => {});
 
       const twiml = new twilio.twiml.MessagingResponse();
       return res.type("text/xml").send(twiml.toString());
@@ -98,6 +100,7 @@ twilioWebhookRouter.post("/whatsapp", async (req, res) => {
         userMessage: incomingText,
         source: "rate-limit-low-signal"
       });
+      sendInboundWhatsAppPush({ sessionId, from, message: incomingText }).catch(() => {});
       const twiml = new twilio.twiml.MessagingResponse();
       return res.type("text/xml").send(twiml.toString());
     }
@@ -116,6 +119,7 @@ twilioWebhookRouter.post("/whatsapp", async (req, res) => {
       userMessage: incomingText,
       aiResult
     });
+    sendInboundWhatsAppPush({ sessionId, from, message: incomingText }).catch(() => {});
 
     const twiml = new twilio.twiml.MessagingResponse();
     const msg = twiml.message();

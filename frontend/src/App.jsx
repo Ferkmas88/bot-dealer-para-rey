@@ -10,6 +10,9 @@ const API_BASE_URL = (
 const API_URL = `${API_BASE_URL}/dealer/ai`;
 const DB_API_URL = `${API_BASE_URL}/dealer/db/inventory`;
 const CONVERSATIONS_API_URL = `${API_BASE_URL}/dealer/db/conversations`;
+const PUSH_CONFIG_URL = `${API_BASE_URL}/dealer/push/config`;
+const PUSH_SUBSCRIBE_URL = `${API_BASE_URL}/dealer/push/subscribe`;
+const PUSH_UNSUBSCRIBE_URL = `${API_BASE_URL}/dealer/push/unsubscribe`;
 const PANEL_PASSWORD = import.meta.env.VITE_PANEL_PASSWORD || "ReyDealer2026";
 const AUTH_STORAGE_KEY = "dealer-panel-auth";
 const AUTH_PERSIST_STORAGE_KEY = "dealer-panel-auth-persist-v1";
@@ -95,6 +98,17 @@ function loadPersistedAuth() {
   }
 }
 
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; i += 1) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
 export default function App() {
   const [isMobile, setIsMobile] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -108,6 +122,8 @@ export default function App() {
   const [passwordInput, setPasswordInput] = useState("");
   const [authError, setAuthError] = useState("");
   const [activeView, setActiveView] = useState("inbox");
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushStatus, setPushStatus] = useState("");
   const [notificationPermission, setNotificationPermission] = useState(() => {
     if (typeof window === "undefined" || !("Notification" in window)) return "unsupported";
     return Notification.permission;
@@ -147,8 +163,11 @@ export default function App() {
   const [inboxUnreadMessages, setInboxUnreadMessages] = useState(0);
   const selectedSessionRef = useRef("");
   const seenCountsRef = useRef(loadSeenCounts());
-  const unreadSnapshotRef = useRef({});
-  const notificationsBootstrappedRef = useRef(false);
+  const pushSupported =
+    typeof window !== "undefined" &&
+    "Notification" in window &&
+    "serviceWorker" in navigator &&
+    "PushManager" in window;
 
   const kpis = useMemo(() => {
     const total = inventoryRows.length;
@@ -183,6 +202,11 @@ export default function App() {
       loadInventory();
     }
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !pushSupported) return;
+    syncPushState().catch(() => {});
+  }, [isAuthenticated, pushSupported]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -226,54 +250,6 @@ export default function App() {
         seenCountsRef.current = seenCounts;
         saveSeenCounts(seenCounts);
 
-        const unreadMap = rows.reduce((acc, row) => {
-          acc[row.session_id] = Number(row.unread_count || 0);
-          return acc;
-        }, {});
-
-        if (!notificationsBootstrappedRef.current) {
-          unreadSnapshotRef.current = unreadMap;
-          notificationsBootstrappedRef.current = true;
-        } else {
-          let newMessageCount = 0;
-          let firstChangedRow = null;
-          for (const row of rows) {
-            const prevUnread = Number(unreadSnapshotRef.current[row.session_id] || 0);
-            const nextUnread = Number(row.unread_count || 0);
-            if (nextUnread > prevUnread) {
-              newMessageCount += nextUnread - prevUnread;
-              if (!firstChangedRow) firstChangedRow = row;
-            }
-          }
-          unreadSnapshotRef.current = unreadMap;
-
-          if (
-            newMessageCount > 0 &&
-            notificationPermission === "granted" &&
-            (typeof document === "undefined" || document.visibilityState !== "visible" || activeView !== "inbox")
-          ) {
-            const label = firstChangedRow ? formatSessionLabel(firstChangedRow.session_id) : "Inbox WhatsApp";
-            const preview = firstChangedRow?.last_message || "Nuevo mensaje recibido.";
-            const notification = new Notification(
-              newMessageCount === 1 ? "Nuevo mensaje de WhatsApp" : `${newMessageCount} mensajes nuevos de WhatsApp`,
-              {
-                body: `${label}: ${preview}`,
-                icon: "/2026-01-14.webp",
-                badge: "/2026-01-14.webp",
-                tag: "dealer-whatsapp-inbox"
-              }
-            );
-            notification.onclick = () => {
-              window.focus();
-              setActiveView("inbox");
-              if (firstChangedRow?.session_id) {
-                setSelectedSessionId(firstChangedRow.session_id);
-              }
-              notification.close();
-            };
-          }
-        }
-
         if (!isMounted) return;
         const unreadMessages = rows.reduce((acc, row) => acc + Number(row.unread_count || 0), 0);
         setInboxUnreadMessages(unreadMessages);
@@ -288,7 +264,7 @@ export default function App() {
       isMounted = false;
       clearInterval(timer);
     };
-  }, [isAuthenticated, activeView, notificationPermission]);
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (!isAuthenticated || activeView !== "inbox") return;
@@ -357,16 +333,84 @@ export default function App() {
     setIsAuthenticated(false);
   }
 
+  async function getPushConfig() {
+    const res = await fetch(PUSH_CONFIG_URL);
+    const data = await res.json();
+    return {
+      enabled: Boolean(data?.enabled),
+      publicKey: typeof data?.publicKey === "string" ? data.publicKey : ""
+    };
+  }
+
+  async function syncPushState() {
+    if (!pushSupported) return;
+    const registration = await navigator.serviceWorker.ready;
+    const existing = await registration.pushManager.getSubscription();
+    setPushEnabled(Boolean(existing));
+  }
+
   async function enableNotifications() {
-    if (typeof window === "undefined" || !("Notification" in window)) {
+    if (!pushSupported) {
       setNotificationPermission("unsupported");
+      setPushStatus("Este navegador no soporta notificaciones push.");
       return;
     }
+
     try {
       const permission = await Notification.requestPermission();
       setNotificationPermission(permission);
+      if (permission !== "granted") {
+        setPushStatus("Permiso de notificaciones denegado.");
+        return;
+      }
+
+      const config = await getPushConfig();
+      if (!config.enabled || !config.publicKey) {
+        setPushStatus("Push no configurado en servidor (falta VAPID).");
+        return;
+      }
+
+      const registration = await navigator.serviceWorker.ready;
+      let subscription = await registration.pushManager.getSubscription();
+      if (!subscription) {
+        const applicationServerKey = urlBase64ToUint8Array(config.publicKey);
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey
+        });
+      }
+
+      await fetch(PUSH_SUBSCRIBE_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(subscription)
+      });
+
+      setPushEnabled(true);
+      setPushStatus("Notificaciones activadas.");
     } catch {
       setNotificationPermission("denied");
+      setPushStatus("No se pudieron activar notificaciones.");
+    }
+  }
+
+  async function disableNotifications() {
+    if (!pushSupported) return;
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+      if (subscription) {
+        await fetch(PUSH_UNSUBSCRIBE_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: subscription.endpoint })
+        });
+        await subscription.unsubscribe();
+      }
+      setPushEnabled(false);
+      setPushStatus("Notificaciones desactivadas.");
+    } catch {
+      setPushStatus("No se pudo desactivar notificaciones.");
     }
   }
 
@@ -741,21 +785,23 @@ export default function App() {
                 {conversationsLoading ? "Cargando..." : "Refrescar chats"}
               </button>
             )}
-            {notificationPermission !== "unsupported" ? (
-              <button
-                type="button"
-                className="secondary-btn"
-                onClick={enableNotifications}
-                disabled={notificationPermission === "granted"}
-              >
-                {notificationPermission === "granted" ? "Notificaciones ON" : "Activar notificaciones"}
-              </button>
+            {pushSupported ? (
+              pushEnabled ? (
+                <button type="button" className="secondary-btn" onClick={disableNotifications}>
+                  Notificaciones ON
+                </button>
+              ) : (
+                <button type="button" className="secondary-btn" onClick={enableNotifications}>
+                  Activar notificaciones
+                </button>
+              )
             ) : null}
             <button type="button" className="danger-btn" onClick={handleLogout}>
               Salir
             </button>
           </div>
         </header>
+        {pushStatus ? <p className="hint">{pushStatus}</p> : null}
 
         {activeView === "crm" ? (
           <section className="crm-layout">

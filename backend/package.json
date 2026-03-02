@@ -17,6 +17,7 @@
     "openai": "^4.57.0",
     "pg": "^8.13.1",
     "twilio": "^5.3.4",
+    "web-push": "^3.6.7",
     "zod": "^3.23.8"
   },
   "devDependencies": {

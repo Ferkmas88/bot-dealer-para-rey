@@ -78,6 +78,16 @@ db.exec(`
     last_read_at TEXT,
     updated_at TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    endpoint TEXT NOT NULL UNIQUE,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    user_agent TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
 `);
 
 const DEFAULT_INVENTORY = [
@@ -262,6 +272,18 @@ async function ensurePgMessagingSchema() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+
+  await pgPool.query(`
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id BIGSERIAL PRIMARY KEY,
+      endpoint TEXT NOT NULL UNIQUE,
+      p256dh TEXT NOT NULL,
+      auth TEXT NOT NULL,
+      user_agent TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
 }
 
 const pgMessagingReady = ensurePgMessagingSchema().catch((error) => {
@@ -311,6 +333,21 @@ const markConversationReadStmt = db.prepare(`
   ON CONFLICT(session_id) DO UPDATE SET
     last_read_at = excluded.last_read_at,
     updated_at = excluded.updated_at
+`);
+
+const upsertPushSubscriptionStmt = db.prepare(`
+  INSERT INTO push_subscriptions (endpoint, p256dh, auth, user_agent, created_at, updated_at)
+  VALUES (?, ?, ?, ?, ?, ?)
+  ON CONFLICT(endpoint) DO UPDATE SET
+    p256dh = excluded.p256dh,
+    auth = excluded.auth,
+    user_agent = excluded.user_agent,
+    updated_at = excluded.updated_at
+`);
+
+const deletePushSubscriptionStmt = db.prepare(`
+  DELETE FROM push_subscriptions
+  WHERE endpoint = ?
 `);
 
 export async function persistDealerTurnToSqlite({ sessionId, userMessage, aiResult, timestamp }) {
@@ -573,6 +610,85 @@ export async function markConversationRead(sessionId) {
 
   markConversationReadStmt.run(sessionId, now, now);
   return getConversationSettings(sessionId);
+}
+
+export async function upsertPushSubscription({
+  endpoint,
+  p256dh,
+  auth,
+  userAgent = ""
+}) {
+  const now = new Date().toISOString();
+  if (usePgInventory && pgPool) {
+    await pgMessagingReady;
+    await pgPool.query(
+      `
+        INSERT INTO push_subscriptions (endpoint, p256dh, auth, user_agent, created_at, updated_at)
+        VALUES ($1,$2,$3,$4,$5,$6)
+        ON CONFLICT(endpoint) DO UPDATE SET
+          p256dh = EXCLUDED.p256dh,
+          auth = EXCLUDED.auth,
+          user_agent = EXCLUDED.user_agent,
+          updated_at = EXCLUDED.updated_at
+      `,
+      [endpoint, p256dh, auth, userAgent || null, now, now]
+    );
+    return { ok: true };
+  }
+
+  upsertPushSubscriptionStmt.run(endpoint, p256dh, auth, userAgent || null, now, now);
+  return { ok: true };
+}
+
+export async function deletePushSubscription(endpoint) {
+  if (!endpoint) return { ok: true };
+
+  if (usePgInventory && pgPool) {
+    await pgMessagingReady;
+    await pgPool.query("DELETE FROM push_subscriptions WHERE endpoint = $1", [endpoint]);
+    return { ok: true };
+  }
+
+  deletePushSubscriptionStmt.run(endpoint);
+  return { ok: true };
+}
+
+export async function listPushSubscriptions() {
+  if (usePgInventory && pgPool) {
+    await pgMessagingReady;
+    const result = await pgPool.query(
+      `
+        SELECT endpoint, p256dh, auth
+        FROM push_subscriptions
+        ORDER BY updated_at DESC
+      `
+    );
+    return (result.rows || []).map((row) => ({
+      endpoint: row.endpoint,
+      keys: {
+        p256dh: row.p256dh,
+        auth: row.auth
+      }
+    }));
+  }
+
+  const rows = db
+    .prepare(
+      `
+      SELECT endpoint, p256dh, auth
+      FROM push_subscriptions
+      ORDER BY updated_at DESC
+      `
+    )
+    .all();
+
+  return rows.map((row) => ({
+    endpoint: row.endpoint,
+    keys: {
+      p256dh: row.p256dh,
+      auth: row.auth
+    }
+  }));
 }
 
 export async function listDealerConversations({ limit = 100, query = "" } = {}) {

@@ -11,9 +11,12 @@ import {
   persistOutgoingAssistantMessage,
   setConversationBotEnabled,
   listInventory,
+  upsertPushSubscription,
+  deletePushSubscription,
   updateInventoryUnit
 } from "../services/sqliteLeadStore.js";
 import { sendManualWhatsAppReply } from "../services/twilioSender.js";
+import { getPushPublicConfig } from "../services/pushNotifications.js";
 
 const inventoryPayloadSchema = z.object({
   make: z.string().min(1),
@@ -29,6 +32,13 @@ const inventoryPayloadSchema = z.object({
 });
 
 const inventoryPatchSchema = inventoryPayloadSchema.partial();
+const pushSubscribeSchema = z.object({
+  endpoint: z.string().url(),
+  keys: z.object({
+    p256dh: z.string().min(1),
+    auth: z.string().min(1)
+  })
+});
 
 export const dealerDbAdminRouter = Router();
 
@@ -136,4 +146,32 @@ dealerDbAdminRouter.post("/dealer/db/conversations/:sessionId/reply", async (req
       error: error?.message || "Failed to send manual reply"
     });
   }
+});
+
+dealerDbAdminRouter.get("/dealer/push/config", (_req, res) => {
+  return res.json(getPushPublicConfig());
+});
+
+dealerDbAdminRouter.post("/dealer/push/subscribe", async (req, res) => {
+  const parsed = pushSubscribeSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid push subscription payload", details: parsed.error.flatten() });
+  }
+
+  const { endpoint, keys } = parsed.data;
+  await upsertPushSubscription({
+    endpoint,
+    p256dh: keys.p256dh,
+    auth: keys.auth,
+    userAgent: req.get("user-agent") || ""
+  });
+  return res.json({ ok: true });
+});
+
+dealerDbAdminRouter.post("/dealer/push/unsubscribe", async (req, res) => {
+  const endpoint = typeof req.body?.endpoint === "string" ? req.body.endpoint : "";
+  if (!endpoint) return res.status(400).json({ error: "endpoint is required" });
+
+  await deletePushSubscription(endpoint);
+  return res.json({ ok: true });
 });
