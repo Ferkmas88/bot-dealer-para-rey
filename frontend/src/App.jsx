@@ -212,6 +212,14 @@ export default function App() {
     if (!isAuthenticated || !pushSupported) return;
     if (notificationPermission !== "granted") return;
 
+    if ("setAppBadge" in navigator) {
+      if (unreadTotal > 0) {
+        navigator.setAppBadge(unreadTotal).catch(() => {});
+      } else if ("clearAppBadge" in navigator) {
+        navigator.clearAppBadge().catch(() => {});
+      }
+    }
+
     navigator.serviceWorker.ready
       .then((registration) => {
         const target = registration.active || registration.waiting || registration.installing;
