@@ -88,6 +88,17 @@ const BUSINESS_HOURS = {
 
 const DAY_INDEX_TO_SPANISH = ["domingo", "lunes", "martes", "miercoles", "jueves", "viernes", "sabado"];
 
+const OPENING_PROMO_MESSAGE =
+  "QUE HUBO MI GENTE LINDA DE KENTUCKY! 🚨\n" +
+  "Acabas de llegar al pais? Ya puedes tener tu carro!\n" +
+  "Llamanos hoy mismo: Reyder Quevedo - 502 576 8116 / 502 780 1096\n" +
+  "3510 Dixie Hwy 40216\n\n" +
+  "TODAS LAS APLICACIONES SON APROBADAS\n" +
+  "No tienes buen credito? APROBADO.\n" +
+  "Solo tienes tu ID? APROBADO.\n" +
+  "Madre soltera? Tenemos planes especiales desde $85/semana.\n" +
+  "Tienes un carro viejo? Lo recibimos como parte de pago.";
+
 const leadMemory = {
   model: null,
   budget: null,
@@ -1220,11 +1231,7 @@ export async function processDealerSessionMessageWithLLM(message, context = {}, 
 
   // Fast path for simple greetings to reduce latency and avoid repetitive inventory replies.
   if (isGreetingOnly(safeMessage)) {
-    const quickReply = pickOne([
-      "Hola, bienvenido. Buscas sedan o pickup y que presupuesto manejas?",
-      "Que tal, bienvenido. Te ayudo a encontrar auto hoy. Que tipo buscas?",
-      "Hola, mucho gusto. Andas buscando sedan, pickup o SUV?"
-    ]);
+    const quickReply = OPENING_PROMO_MESSAGE;
     const intent = "question";
     const updatedContext = mergeContext(context, extracted, intent);
     const entities = buildEntitySnapshot(extracted, updatedContext);
