@@ -1,4 +1,4 @@
-const CACHE_NAME = "empire-rey-crm-v1";
+const CACHE_NAME = "empire-rey-crm-v2";
 const APP_SHELL = ["/", "/manifest.webmanifest", "/2026-01-14.webp"];
 
 self.addEventListener("install", (event) => {
@@ -27,17 +27,32 @@ self.addEventListener("fetch", (event) => {
 
   if (url.origin !== self.location.origin) return;
 
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-
-      return fetch(event.request)
+  // Always prefer network for the app shell/navigation so new deploys show immediately.
+  if (event.request.mode === "navigate") {
+    event.respondWith(
+      fetch(event.request)
         .then((response) => {
           const responseClone = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone));
           return response;
         })
-        .catch(() => caches.match("/"));
-    })
+        .catch(() => caches.match(event.request).then((cached) => cached || caches.match("/")))
+    );
+    return;
+  }
+
+  event.respondWith(
+    fetch(event.request)
+      .then((response) => {
+        const responseClone = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone));
+        return response;
+      })
+      .catch(() =>
+        caches.match(event.request).then((cached) => {
+          if (cached) return cached;
+          return caches.match("/");
+        })
+      )
   );
 });
