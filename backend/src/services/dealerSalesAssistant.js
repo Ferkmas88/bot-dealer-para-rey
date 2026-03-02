@@ -89,15 +89,16 @@ const BUSINESS_HOURS = {
 const DAY_INDEX_TO_SPANISH = ["domingo", "lunes", "martes", "miercoles", "jueves", "viernes", "sabado"];
 
 const OPENING_PROMO_MESSAGE =
-  "QUE HUBO MI GENTE LINDA DE KENTUCKY! 🚨\n" +
-  "Acabas de llegar al pais? Ya puedes tener tu carro!\n" +
-  "Llamanos hoy mismo: Reyder Quevedo - 502 576 8116 / 502 780 1096\n" +
-  "3510 Dixie Hwy 40216\n\n" +
-  "TODAS LAS APLICACIONES SON APROBADAS\n" +
-  "No tienes buen credito? APROBADO.\n" +
-  "Solo tienes tu ID? APROBADO.\n" +
-  "Madre soltera? Tenemos planes especiales desde $85/semana.\n" +
-  "Tienes un carro viejo? Lo recibimos como parte de pago.";
+  "🚨 ¡QUÉ HUBO MI GENTE LINDA DE KENTUCKY! 🚨\n" +
+  "🚗 ¿Acabas de llegar al país? ¡Ya puedes tener tu carro!\n" +
+  "📞 Llámanos hoy mismo: Reyder Quevedo -📞 502 576 8116\n" +
+  "502 780 1096  LLAMA!¡!!!\n" +
+  "3510 dixie hwy 40216\n\n" +
+  "💥 TODAS LAS APLICACIONES SON APROBADAS 💥\n" +
+  "✅ ¿No tienes buen crédito? ¡APROBADO!\n" +
+  "✅ ¿Solo tienes tu ID? ¡APROBADO!\n" +
+  "✅ ¿Madre soltera? ¡Tenemos planes especiales para ti desde $85/semana!\n" +
+  "✅ ¿Tienes un carro viejo? ¡Lo recibimos como parte de pago!";
 
 const leadMemory = {
   model: null,
