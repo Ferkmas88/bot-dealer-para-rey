@@ -208,6 +208,66 @@ const pgInventoryReady = ensurePgInventorySchemaAndSeed().catch((error) => {
   console.error("Neon inventory init failed, using SQLite fallback:", error?.message || error);
 });
 
+async function ensurePgMessagingSchema() {
+  if (!usePgInventory || !pgPool) return;
+
+  await pgPool.query(`
+    CREATE TABLE IF NOT EXISTS leads (
+      session_id TEXT PRIMARY KEY,
+      model TEXT,
+      budget DOUBLE PRECISION,
+      date_pref TEXT,
+      email TEXT,
+      phone TEXT,
+      last_intent TEXT,
+      last_source TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pgPool.query(`
+    CREATE TABLE IF NOT EXISTS messages (
+      id BIGSERIAL PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      intent TEXT,
+      source TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pgPool.query(`
+    CREATE INDEX IF NOT EXISTS idx_messages_session_created
+    ON messages(session_id, created_at);
+  `);
+
+  await pgPool.query(`
+    CREATE TABLE IF NOT EXISTS feedback (
+      id BIGSERIAL PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      rating INTEGER NOT NULL,
+      comment TEXT,
+      reply TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pgPool.query(`
+    CREATE TABLE IF NOT EXISTS conversation_settings (
+      session_id TEXT PRIMARY KEY,
+      bot_enabled INTEGER NOT NULL DEFAULT 1,
+      last_read_at TIMESTAMPTZ,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+}
+
+const pgMessagingReady = ensurePgMessagingSchema().catch((error) => {
+  console.error("Neon messaging init failed, using SQLite fallback:", error?.message || error);
+});
+
 const upsertLeadStmt = db.prepare(`
   INSERT INTO leads (
     session_id, model, budget, date_pref, email, phone, last_intent, last_source, created_at, updated_at
@@ -253,9 +313,76 @@ const markConversationReadStmt = db.prepare(`
     updated_at = excluded.updated_at
 `);
 
-export function persistDealerTurnToSqlite({ sessionId, userMessage, aiResult, timestamp }) {
+export async function persistDealerTurnToSqlite({ sessionId, userMessage, aiResult, timestamp }) {
   const entities = aiResult?.entities || {};
   const contact = entities.contact || {};
+
+  if (usePgInventory && pgPool) {
+    await pgMessagingReady;
+    const client = await pgPool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        `
+          INSERT INTO leads (
+            session_id, model, budget, date_pref, email, phone, last_intent, last_source, created_at, updated_at
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+          ON CONFLICT(session_id) DO UPDATE SET
+            model = EXCLUDED.model,
+            budget = EXCLUDED.budget,
+            date_pref = EXCLUDED.date_pref,
+            email = EXCLUDED.email,
+            phone = EXCLUDED.phone,
+            last_intent = EXCLUDED.last_intent,
+            last_source = EXCLUDED.last_source,
+            updated_at = EXCLUDED.updated_at
+        `,
+        [
+          sessionId,
+          entities.model ?? null,
+          entities.budget ?? null,
+          entities.date ?? null,
+          contact.email ?? null,
+          contact.phone ?? null,
+          aiResult?.intent ?? null,
+          aiResult?.source ?? "fallback",
+          timestamp,
+          timestamp
+        ]
+      );
+
+      await client.query(
+        `
+          INSERT INTO messages (session_id, role, content, intent, source, created_at)
+          VALUES ($1,$2,$3,$4,$5,$6), ($1,$7,$8,$9,$10,$6)
+        `,
+        [
+          sessionId,
+          "user",
+          userMessage || "",
+          aiResult?.intent ?? null,
+          aiResult?.source ?? "fallback",
+          timestamp,
+          "assistant",
+          aiResult?.reply || "",
+          aiResult?.intent ?? null,
+          aiResult?.source ?? "fallback"
+        ]
+      );
+
+      await client.query("COMMIT");
+      return;
+    } catch (error) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {
+        // noop
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
 
   try {
     db.exec("BEGIN");
@@ -302,26 +429,84 @@ export function persistDealerTurnToSqlite({ sessionId, userMessage, aiResult, ti
   }
 }
 
-export function persistDealerFeedbackToSqlite({ sessionId, rating, comment = "", reply = "" }) {
+export async function persistDealerFeedbackToSqlite({ sessionId, rating, comment = "", reply = "" }) {
+  if (usePgInventory && pgPool) {
+    await pgMessagingReady;
+    await pgPool.query(
+      `
+        INSERT INTO feedback (session_id, rating, comment, reply, created_at)
+        VALUES ($1,$2,$3,$4,$5)
+      `,
+      [sessionId, rating, comment, reply, new Date().toISOString()]
+    );
+    return;
+  }
+
   insertFeedbackStmt.run(sessionId, rating, comment, reply, new Date().toISOString());
 }
 
-export function persistIncomingUserMessage({ sessionId, userMessage = "", source = "manual-mode", intent = null }) {
+export async function persistIncomingUserMessage({ sessionId, userMessage = "", source = "manual-mode", intent = null }) {
   const timestamp = new Date().toISOString();
+  if (usePgInventory && pgPool) {
+    await pgMessagingReady;
+    await pgPool.query(
+      `
+        INSERT INTO messages (session_id, role, content, intent, source, created_at)
+        VALUES ($1,$2,$3,$4,$5,$6)
+      `,
+      [sessionId, "user", userMessage, intent, source, timestamp]
+    );
+    return;
+  }
   insertMessageStmt.run(sessionId, "user", userMessage, intent, source, timestamp);
 }
 
-export function persistOutgoingAssistantMessage({
+export async function persistOutgoingAssistantMessage({
   sessionId,
   assistantMessage = "",
   source = "manual-agent",
   intent = "manual_reply"
 }) {
   const timestamp = new Date().toISOString();
+  if (usePgInventory && pgPool) {
+    await pgMessagingReady;
+    await pgPool.query(
+      `
+        INSERT INTO messages (session_id, role, content, intent, source, created_at)
+        VALUES ($1,$2,$3,$4,$5,$6)
+      `,
+      [sessionId, "assistant", assistantMessage, intent, source, timestamp]
+    );
+    return;
+  }
   insertMessageStmt.run(sessionId, "assistant", assistantMessage, intent, source, timestamp);
 }
 
-export function getConversationSettings(sessionId) {
+export async function getConversationSettings(sessionId) {
+  if (usePgInventory && pgPool) {
+    await pgMessagingReady;
+    const result = await pgPool.query(
+      `
+        SELECT session_id, bot_enabled, last_read_at, updated_at
+        FROM conversation_settings
+        WHERE session_id = $1
+        LIMIT 1
+      `,
+      [sessionId]
+    );
+
+    const row = result.rows?.[0];
+    if (!row) {
+      return {
+        session_id: sessionId,
+        bot_enabled: 1,
+        last_read_at: null,
+        updated_at: null
+      };
+    }
+    return row;
+  }
+
   const row = db
     .prepare(
       `
@@ -345,23 +530,99 @@ export function getConversationSettings(sessionId) {
   return row;
 }
 
-export function setConversationBotEnabled(sessionId, enabled) {
+export async function setConversationBotEnabled(sessionId, enabled) {
   const now = new Date().toISOString();
-  const current = getConversationSettings(sessionId);
+  const current = await getConversationSettings(sessionId);
+
+  if (usePgInventory && pgPool) {
+    await pgMessagingReady;
+    await pgPool.query(
+      `
+        INSERT INTO conversation_settings (session_id, bot_enabled, last_read_at, updated_at)
+        VALUES ($1,$2,$3,$4)
+        ON CONFLICT(session_id) DO UPDATE SET
+          bot_enabled = EXCLUDED.bot_enabled,
+          last_read_at = EXCLUDED.last_read_at,
+          updated_at = EXCLUDED.updated_at
+      `,
+      [sessionId, enabled ? 1 : 0, current.last_read_at ?? null, now]
+    );
+    return getConversationSettings(sessionId);
+  }
+
   upsertConversationSettingsStmt.run(sessionId, enabled ? 1 : 0, current.last_read_at ?? null, now);
   return getConversationSettings(sessionId);
 }
 
-export function markConversationRead(sessionId) {
+export async function markConversationRead(sessionId) {
   const now = new Date().toISOString();
+  if (usePgInventory && pgPool) {
+    await pgMessagingReady;
+    await pgPool.query(
+      `
+        INSERT INTO conversation_settings (session_id, bot_enabled, last_read_at, updated_at)
+        VALUES ($1, 1, $2, $3)
+        ON CONFLICT(session_id) DO UPDATE SET
+          last_read_at = EXCLUDED.last_read_at,
+          updated_at = EXCLUDED.updated_at
+      `,
+      [sessionId, now, now]
+    );
+    return getConversationSettings(sessionId);
+  }
+
   markConversationReadStmt.run(sessionId, now, now);
   return getConversationSettings(sessionId);
 }
 
-export function listDealerConversations({ limit = 100, query = "" } = {}) {
+export async function listDealerConversations({ limit = 100, query = "" } = {}) {
   const safeLimit = Number.isFinite(Number(limit)) ? Math.max(1, Math.min(500, Number(limit))) : 100;
   const normalizedQuery = String(query || "").trim().toLowerCase();
   const hasQuery = normalizedQuery.length > 0;
+
+  if (usePgInventory && pgPool) {
+    await pgMessagingReady;
+    const result = await pgPool.query(
+      `
+        SELECT
+          m.session_id AS session_id,
+          MAX(m.created_at) AS updated_at,
+          SUM(CASE WHEN m.role = 'user' THEN 1 ELSE 0 END)::int AS user_messages,
+          SUM(CASE WHEN m.role = 'assistant' THEN 1 ELSE 0 END)::int AS assistant_messages,
+          (
+            SELECT m2.content
+            FROM messages m2
+            WHERE m2.session_id = m.session_id
+            ORDER BY m2.created_at DESC, m2.id DESC
+            LIMIT 1
+          ) AS last_message,
+          (
+            SELECT m2.role
+            FROM messages m2
+            WHERE m2.session_id = m.session_id
+            ORDER BY m2.created_at DESC, m2.id DESC
+            LIMIT 1
+          ) AS last_role,
+          COALESCE(s.bot_enabled, 1) AS bot_enabled,
+          s.last_read_at AS last_read_at,
+          (
+            SELECT COUNT(1)::int
+            FROM messages um
+            WHERE um.session_id = m.session_id
+              AND um.role = 'user'
+              AND (s.last_read_at IS NULL OR um.created_at > s.last_read_at)
+          ) AS unread_count
+        FROM messages m
+        LEFT JOIN conversation_settings s ON s.session_id = m.session_id
+        ${hasQuery ? "WHERE LOWER(m.session_id) LIKE $1 " : ""}
+        GROUP BY m.session_id, s.bot_enabled, s.last_read_at
+        ORDER BY updated_at DESC
+        LIMIT $${hasQuery ? 2 : 1}
+      `,
+      hasQuery ? [`%${normalizedQuery}%`, safeLimit] : [safeLimit]
+    );
+    return result.rows || [];
+  }
 
   const sql = `
       SELECT
@@ -410,8 +671,30 @@ export function listDealerConversations({ limit = 100, query = "" } = {}) {
   return rows;
 }
 
-export function listDealerMessagesBySession(sessionId, { limit = 500 } = {}) {
+export async function listDealerMessagesBySession(sessionId, { limit = 500 } = {}) {
   const safeLimit = Number.isFinite(Number(limit)) ? Math.max(1, Math.min(2000, Number(limit))) : 500;
+
+  if (usePgInventory && pgPool) {
+    await pgMessagingReady;
+    const result = await pgPool.query(
+      `
+        SELECT
+          id,
+          session_id,
+          role,
+          content,
+          intent,
+          source,
+          created_at
+        FROM messages
+        WHERE session_id = $1
+        ORDER BY created_at ASC, id ASC
+        LIMIT $2
+      `,
+      [sessionId, safeLimit]
+    );
+    return result.rows || [];
+  }
 
   const rows = db
     .prepare(

@@ -48,7 +48,7 @@ dealerAiRouter.post("/dealer/ai", async (req, res) => {
     ? await processDealerSessionMessage(message, session.context, learningState)
     : await processDealerSessionMessageWithLLM(message, session.context, learningState);
 
-  saveDealerTurn({
+  await saveDealerTurn({
     sessionId,
     userMessage: message,
     aiResult
@@ -91,7 +91,7 @@ dealerAiRouter.get("/dealer/ai/connection", async (_req, res) => {
   });
 });
 
-dealerAiRouter.post("/dealer/ai/feedback", (req, res) => {
+dealerAiRouter.post("/dealer/ai/feedback", async (req, res) => {
   const parsed = feedbackSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({
@@ -100,7 +100,7 @@ dealerAiRouter.post("/dealer/ai/feedback", (req, res) => {
     });
   }
 
-  saveDealerFeedback(parsed.data);
+  await saveDealerFeedback(parsed.data);
   return res.json({ ok: true });
 });
 

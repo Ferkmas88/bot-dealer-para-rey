@@ -77,11 +77,11 @@ twilioWebhookRouter.post("/whatsapp", async (req, res) => {
   const sessionId = `wa:${from}`;
 
   try {
-    const settings = getConversationSettings(sessionId);
+    const settings = await getConversationSettings(sessionId);
     const botEnabled = Number(settings?.bot_enabled ?? 1) === 1;
 
     if (!botEnabled) {
-      persistIncomingUserMessage({
+      await persistIncomingUserMessage({
         sessionId,
         userMessage: incomingText,
         source: "bot-disabled"
@@ -93,7 +93,7 @@ twilioWebhookRouter.post("/whatsapp", async (req, res) => {
 
     const cadenceDecision = shouldSilenceLowSignalReply(sessionId, incomingText);
     if (cadenceDecision.silence) {
-      persistIncomingUserMessage({
+      await persistIncomingUserMessage({
         sessionId,
         userMessage: incomingText,
         source: "rate-limit-low-signal"
@@ -111,7 +111,7 @@ twilioWebhookRouter.post("/whatsapp", async (req, res) => {
       learningState
     );
 
-    saveDealerTurn({
+    await saveDealerTurn({
       sessionId,
       userMessage: incomingText,
       aiResult

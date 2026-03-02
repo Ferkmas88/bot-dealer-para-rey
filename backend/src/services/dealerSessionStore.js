@@ -121,7 +121,7 @@ export function getLearningState(sessionId) {
   };
 }
 
-export function saveDealerTurn({ sessionId, userMessage, aiResult }) {
+export async function saveDealerTurn({ sessionId, userMessage, aiResult }) {
   const session = getDealerSession(sessionId);
   const timestamp = new Date().toISOString();
 
@@ -138,13 +138,13 @@ export function saveDealerTurn({ sessionId, userMessage, aiResult }) {
   session.updatedAt = timestamp;
 
   try {
-    persistDealerTurnToSqlite({ sessionId, userMessage, aiResult, timestamp });
+    await persistDealerTurnToSqlite({ sessionId, userMessage, aiResult, timestamp });
   } catch (error) {
     registerFailure(session, "sqlite_persist_turn_failed", error?.message || "Failed to persist turn to sqlite.");
   }
 }
 
-export function saveDealerFeedback({ sessionId, rating, comment = "", reply = "" }) {
+export async function saveDealerFeedback({ sessionId, rating, comment = "", reply = "" }) {
   const session = getDealerSession(sessionId);
   const entry = {
     rating,
@@ -172,7 +172,7 @@ export function saveDealerFeedback({ sessionId, rating, comment = "", reply = ""
   session.updatedAt = new Date().toISOString();
 
   try {
-    persistDealerFeedbackToSqlite({ sessionId, rating, comment, reply });
+    await persistDealerFeedbackToSqlite({ sessionId, rating, comment, reply });
   } catch (error) {
     registerFailure(session, "sqlite_persist_feedback_failed", error?.message || "Failed to persist feedback to sqlite.");
   }
@@ -196,4 +196,3 @@ export function getDealerSessionSummary(sessionId) {
     updatedAt: session.updatedAt
   };
 }
-

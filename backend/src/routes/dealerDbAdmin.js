@@ -82,31 +82,31 @@ dealerDbAdminRouter.delete("/dealer/db/inventory/:id", async (req, res) => {
   return res.json({ ok: true });
 });
 
-dealerDbAdminRouter.get("/dealer/db/conversations", (req, res) => {
+dealerDbAdminRouter.get("/dealer/db/conversations", async (req, res) => {
   const limit = typeof req.query.limit === "string" ? Number(req.query.limit) : 100;
   const query = typeof req.query.query === "string" ? req.query.query : "";
-  const rows = listDealerConversations({ limit, query });
+  const rows = await listDealerConversations({ limit, query });
   return res.json({ rows });
 });
 
-dealerDbAdminRouter.get("/dealer/db/conversations/:sessionId/messages", (req, res) => {
+dealerDbAdminRouter.get("/dealer/db/conversations/:sessionId/messages", async (req, res) => {
   const sessionId = req.params.sessionId;
   const limit = typeof req.query.limit === "string" ? Number(req.query.limit) : 500;
-  const rows = listDealerMessagesBySession(sessionId, { limit });
-  const settings = getConversationSettings(sessionId);
+  const rows = await listDealerMessagesBySession(sessionId, { limit });
+  const settings = await getConversationSettings(sessionId);
   return res.json({ rows, settings });
 });
 
-dealerDbAdminRouter.post("/dealer/db/conversations/:sessionId/read", (req, res) => {
+dealerDbAdminRouter.post("/dealer/db/conversations/:sessionId/read", async (req, res) => {
   const sessionId = req.params.sessionId;
-  const settings = markConversationRead(sessionId);
+  const settings = await markConversationRead(sessionId);
   return res.json({ ok: true, settings });
 });
 
-dealerDbAdminRouter.patch("/dealer/db/conversations/:sessionId/bot", (req, res) => {
+dealerDbAdminRouter.patch("/dealer/db/conversations/:sessionId/bot", async (req, res) => {
   const sessionId = req.params.sessionId;
   const enabled = Boolean(req.body?.enabled);
-  const settings = setConversationBotEnabled(sessionId, enabled);
+  const settings = await setConversationBotEnabled(sessionId, enabled);
   return res.json({ ok: true, settings });
 });
 
@@ -120,7 +120,7 @@ dealerDbAdminRouter.post("/dealer/db/conversations/:sessionId/reply", async (req
 
   try {
     const twilioResponse = await sendManualWhatsAppReply({ sessionId, body });
-    persistOutgoingAssistantMessage({
+    await persistOutgoingAssistantMessage({
       sessionId,
       assistantMessage: body,
       source: "manual-agent"

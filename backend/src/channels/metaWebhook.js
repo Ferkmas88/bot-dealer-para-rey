@@ -105,11 +105,11 @@ metaWebhookRouter.post("/whatsapp", async (req, res) => {
   try {
     for (const msg of incoming) {
       const sessionId = `wa_meta:${msg.from}`;
-      const settings = getConversationSettings(sessionId);
+      const settings = await getConversationSettings(sessionId);
       const botEnabled = Number(settings?.bot_enabled ?? 1) === 1;
 
       if (!botEnabled) {
-        persistIncomingUserMessage({
+        await persistIncomingUserMessage({
           sessionId,
           userMessage: msg.body,
           source: "bot-disabled"
@@ -122,7 +122,7 @@ metaWebhookRouter.post("/whatsapp", async (req, res) => {
 
       const aiResult = await processDealerSessionMessageWithLLM(msg.body, session.context, learningState);
 
-      saveDealerTurn({
+      await saveDealerTurn({
         sessionId,
         userMessage: msg.body,
         aiResult
