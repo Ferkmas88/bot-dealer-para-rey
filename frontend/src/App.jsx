@@ -12,6 +12,8 @@ const DB_API_URL = `${API_BASE_URL}/dealer/db/inventory`;
 const CONVERSATIONS_API_URL = `${API_BASE_URL}/dealer/db/conversations`;
 const PANEL_PASSWORD = import.meta.env.VITE_PANEL_PASSWORD || "ReyDealer2026";
 const AUTH_STORAGE_KEY = "dealer-panel-auth";
+const AUTH_PERSIST_STORAGE_KEY = "dealer-panel-auth-persist-v1";
+const AUTH_PERSIST_TTL_MS = 1000 * 60 * 60 * 24 * 30;
 const INBOX_SEEN_STORAGE_KEY = "dealer-inbox-seen-counts-v1";
 
 const EMPTY_FORM = {
@@ -66,16 +68,40 @@ function saveSeenCounts(value) {
   }
 }
 
+function loadPersistedAuth() {
+  try {
+    const raw = localStorage.getItem(AUTH_PERSIST_STORAGE_KEY);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw);
+    if (!parsed || parsed.ok !== true) return false;
+    const expiresAt = Number(parsed.expiresAt || 0);
+    if (!expiresAt || Date.now() > expiresAt) {
+      localStorage.removeItem(AUTH_PERSIST_STORAGE_KEY);
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export default function App() {
   const [isMobile, setIsMobile] = useState(() => {
     if (typeof window === "undefined") return false;
     return window.matchMedia("(max-width: 860px)").matches;
   });
   const [mobileInboxPanel, setMobileInboxPanel] = useState("list");
-  const [isAuthenticated, setIsAuthenticated] = useState(() => sessionStorage.getItem(AUTH_STORAGE_KEY) === "ok");
+  const [isAuthenticated, setIsAuthenticated] = useState(
+    () => sessionStorage.getItem(AUTH_STORAGE_KEY) === "ok" || loadPersistedAuth()
+  );
+  const [rememberMe, setRememberMe] = useState(true);
   const [passwordInput, setPasswordInput] = useState("");
   const [authError, setAuthError] = useState("");
-  const [activeView, setActiveView] = useState("crm");
+  const [activeView, setActiveView] = useState("inbox");
+  const [notificationPermission, setNotificationPermission] = useState(() => {
+    if (typeof window === "undefined" || !("Notification" in window)) return "unsupported";
+    return Notification.permission;
+  });
 
   const [sessionId, setSessionId] = useState("web-dealer-1");
   const [messages, setMessages] = useState([
@@ -111,6 +137,8 @@ export default function App() {
   const [inboxUnreadMessages, setInboxUnreadMessages] = useState(0);
   const selectedSessionRef = useRef("");
   const seenCountsRef = useRef(loadSeenCounts());
+  const unreadSnapshotRef = useRef({});
+  const notificationsBootstrappedRef = useRef(false);
 
   const kpis = useMemo(() => {
     const total = inventoryRows.length;
@@ -133,6 +161,12 @@ export default function App() {
   useEffect(() => {
     selectedSessionRef.current = selectedSessionId;
   }, [selectedSessionId]);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      sessionStorage.setItem(AUTH_STORAGE_KEY, "ok");
+    }
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -181,6 +215,55 @@ export default function App() {
         });
         seenCountsRef.current = seenCounts;
         saveSeenCounts(seenCounts);
+
+        const unreadMap = rows.reduce((acc, row) => {
+          acc[row.session_id] = Number(row.unread_count || 0);
+          return acc;
+        }, {});
+
+        if (!notificationsBootstrappedRef.current) {
+          unreadSnapshotRef.current = unreadMap;
+          notificationsBootstrappedRef.current = true;
+        } else {
+          let newMessageCount = 0;
+          let firstChangedRow = null;
+          for (const row of rows) {
+            const prevUnread = Number(unreadSnapshotRef.current[row.session_id] || 0);
+            const nextUnread = Number(row.unread_count || 0);
+            if (nextUnread > prevUnread) {
+              newMessageCount += nextUnread - prevUnread;
+              if (!firstChangedRow) firstChangedRow = row;
+            }
+          }
+          unreadSnapshotRef.current = unreadMap;
+
+          if (
+            newMessageCount > 0 &&
+            notificationPermission === "granted" &&
+            (typeof document === "undefined" || document.visibilityState !== "visible" || activeView !== "inbox")
+          ) {
+            const label = firstChangedRow ? formatSessionLabel(firstChangedRow.session_id) : "Inbox WhatsApp";
+            const preview = firstChangedRow?.last_message || "Nuevo mensaje recibido.";
+            const notification = new Notification(
+              newMessageCount === 1 ? "Nuevo mensaje de WhatsApp" : `${newMessageCount} mensajes nuevos de WhatsApp`,
+              {
+                body: `${label}: ${preview}`,
+                icon: "/2026-01-14.webp",
+                badge: "/2026-01-14.webp",
+                tag: "dealer-whatsapp-inbox"
+              }
+            );
+            notification.onclick = () => {
+              window.focus();
+              setActiveView("inbox");
+              if (firstChangedRow?.session_id) {
+                setSelectedSessionId(firstChangedRow.session_id);
+              }
+              notification.close();
+            };
+          }
+        }
+
         if (!isMounted) return;
         const unreadMessages = rows.reduce((acc, row) => acc + Number(row.unread_count || 0), 0);
         setInboxUnreadMessages(unreadMessages);
@@ -195,7 +278,7 @@ export default function App() {
       isMounted = false;
       clearInterval(timer);
     };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, activeView, notificationPermission]);
 
   useEffect(() => {
     if (!isAuthenticated || activeView !== "inbox") return;
@@ -241,9 +324,18 @@ export default function App() {
     e.preventDefault();
     if (passwordInput === PANEL_PASSWORD) {
       sessionStorage.setItem(AUTH_STORAGE_KEY, "ok");
+      if (rememberMe) {
+        localStorage.setItem(
+          AUTH_PERSIST_STORAGE_KEY,
+          JSON.stringify({ ok: true, expiresAt: Date.now() + AUTH_PERSIST_TTL_MS })
+        );
+      } else {
+        localStorage.removeItem(AUTH_PERSIST_STORAGE_KEY);
+      }
       setIsAuthenticated(true);
       setAuthError("");
       setPasswordInput("");
+      setActiveView("inbox");
       return;
     }
     setAuthError("Contrasena incorrecta.");
@@ -251,7 +343,21 @@ export default function App() {
 
   function handleLogout() {
     sessionStorage.removeItem(AUTH_STORAGE_KEY);
+    localStorage.removeItem(AUTH_PERSIST_STORAGE_KEY);
     setIsAuthenticated(false);
+  }
+
+  async function enableNotifications() {
+    if (typeof window === "undefined" || !("Notification" in window)) {
+      setNotificationPermission("unsupported");
+      return;
+    }
+    try {
+      const permission = await Notification.requestPermission();
+      setNotificationPermission(permission);
+    } catch {
+      setNotificationPermission("denied");
+    }
   }
 
   async function sendMessage(text) {
@@ -570,6 +676,14 @@ export default function App() {
             />
             <button type="submit">Entrar</button>
           </form>
+          <label className="remember-row">
+            <input
+              type="checkbox"
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
+            />
+            Recordarme en este dispositivo (30 dias)
+          </label>
           {authError ? <p className="error-text">{authError}</p> : null}
           <p className="hint">Configurable con VITE_PANEL_PASSWORD.</p>
         </section>
@@ -594,7 +708,7 @@ export default function App() {
               className={activeView === "crm" ? "active-btn" : "secondary-btn"}
               onClick={() => setActiveView("crm")}
             >
-              CRM
+              Inventario
             </button>
             <button
               type="button"
@@ -617,6 +731,16 @@ export default function App() {
                 {conversationsLoading ? "Cargando..." : "Refrescar chats"}
               </button>
             )}
+            {notificationPermission !== "unsupported" ? (
+              <button
+                type="button"
+                className="secondary-btn"
+                onClick={enableNotifications}
+                disabled={notificationPermission === "granted"}
+              >
+                {notificationPermission === "granted" ? "Notificaciones ON" : "Activar notificaciones"}
+              </button>
+            ) : null}
             <button type="button" className="danger-btn" onClick={handleLogout}>
               Salir
             </button>

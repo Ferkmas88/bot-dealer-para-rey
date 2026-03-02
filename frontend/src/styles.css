@@ -84,6 +84,15 @@ h2 {
   gap: 8px;
 }
 
+.remember-row {
+  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .topbar {
   display: flex;
   justify-content: space-between;
