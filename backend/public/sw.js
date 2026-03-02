@@ -66,6 +66,7 @@ self.addEventListener("push", (event) => {
   }
 
   const title = data.title || "Nuevo mensaje";
+  const badgeCount = Number(data.badgeCount || 0);
   const options = {
     body: data.body || "Tienes una nueva notificacion.",
     icon: data.icon || "/2026-01-14.webp",
@@ -76,7 +77,18 @@ self.addEventListener("push", (event) => {
     }
   };
 
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil(
+    (async () => {
+      if (self.navigator && "setAppBadge" in self.navigator) {
+        if (badgeCount > 0) {
+          await self.navigator.setAppBadge(badgeCount);
+        } else if ("clearAppBadge" in self.navigator) {
+          await self.navigator.clearAppBadge();
+        }
+      }
+      await self.registration.showNotification(title, options);
+    })()
+  );
 });
 
 self.addEventListener("notificationclick", (event) => {
@@ -96,5 +108,22 @@ self.addEventListener("notificationclick", (event) => {
       }
       return clients.openWindow(targetUrl);
     })
+  );
+});
+
+self.addEventListener("message", (event) => {
+  const type = event?.data?.type;
+  if (type !== "SET_BADGE") return;
+  const count = Number(event?.data?.count || 0);
+
+  event.waitUntil(
+    (async () => {
+      if (!self.navigator || !("setAppBadge" in self.navigator)) return;
+      if (count > 0) {
+        await self.navigator.setAppBadge(count);
+      } else if ("clearAppBadge" in self.navigator) {
+        await self.navigator.clearAppBadge();
+      }
+    })()
   );
 });

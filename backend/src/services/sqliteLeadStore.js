@@ -834,6 +834,56 @@ export async function listDealerMessagesBySession(sessionId, { limit = 500 } = {
   return rows;
 }
 
+export async function getUnreadMessagesTotal() {
+  if (usePgInventory && pgPool) {
+    await pgMessagingReady;
+    const result = await pgPool.query(
+      `
+        SELECT COALESCE(SUM(unread_count), 0)::int AS total
+        FROM (
+          SELECT
+            m.session_id,
+            (
+              SELECT COUNT(1)::int
+              FROM messages um
+              LEFT JOIN conversation_settings s2 ON s2.session_id = um.session_id
+              WHERE um.session_id = m.session_id
+                AND um.role = 'user'
+                AND (s2.last_read_at IS NULL OR um.created_at > s2.last_read_at)
+            ) AS unread_count
+          FROM messages m
+          GROUP BY m.session_id
+        ) q
+      `
+    );
+    return Number(result.rows?.[0]?.total || 0);
+  }
+
+  const result = db
+    .prepare(
+      `
+      SELECT COALESCE(SUM(unread_count), 0) AS total
+      FROM (
+        SELECT
+          m.session_id,
+          (
+            SELECT COUNT(1)
+            FROM messages um
+            LEFT JOIN conversation_settings s2 ON s2.session_id = um.session_id
+            WHERE um.session_id = m.session_id
+              AND um.role = 'user'
+              AND (s2.last_read_at IS NULL OR um.created_at > s2.last_read_at)
+          ) AS unread_count
+        FROM messages m
+        GROUP BY m.session_id
+      ) q
+      `
+    )
+    .get();
+
+  return Number(result?.total || 0);
+}
+
 export function getSqliteHealth() {
   try {
     db.prepare("SELECT 1").get();

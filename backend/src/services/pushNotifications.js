@@ -1,5 +1,5 @@
 import webpush from "web-push";
-import { deletePushSubscription, listPushSubscriptions } from "./sqliteLeadStore.js";
+import { deletePushSubscription, getUnreadMessagesTotal, listPushSubscriptions } from "./sqliteLeadStore.js";
 
 function getVapidConfig() {
   const publicKey = process.env.VAPID_PUBLIC_KEY || "";
@@ -34,13 +34,15 @@ export async function sendInboundWhatsAppPush({ sessionId, from, message }) {
 
   const safeFrom = String(from || sessionId || "WhatsApp");
   const safeMessage = String(message || "").trim() || "Nuevo mensaje recibido";
+  const badgeCount = await getUnreadMessagesTotal();
   const payload = JSON.stringify({
     title: "Nuevo mensaje de WhatsApp",
     body: `${safeFrom}: ${safeMessage.slice(0, 140)}`,
     icon: "/2026-01-14.webp",
     badge: "/2026-01-14.webp",
     tag: "dealer-whatsapp-inbox",
-    url: "/"
+    url: "/",
+    badgeCount
   });
 
   let sent = 0;

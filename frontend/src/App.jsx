@@ -209,6 +209,19 @@ export default function App() {
   }, [isAuthenticated, pushSupported]);
 
   useEffect(() => {
+    if (!isAuthenticated || !pushSupported) return;
+    if (notificationPermission !== "granted") return;
+
+    navigator.serviceWorker.ready
+      .then((registration) => {
+        const target = registration.active || registration.waiting || registration.installing;
+        if (!target) return;
+        target.postMessage({ type: "SET_BADGE", count: unreadTotal });
+      })
+      .catch(() => {});
+  }, [isAuthenticated, pushSupported, notificationPermission, unreadTotal]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return undefined;
     const media = window.matchMedia("(max-width: 860px)");
     const apply = () => {
