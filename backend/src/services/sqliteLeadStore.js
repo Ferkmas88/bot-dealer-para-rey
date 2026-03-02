@@ -735,6 +735,47 @@ export function getSqliteHealth() {
   }
 }
 
+export async function getStorageHealth() {
+  if (usePgInventory && pgPool) {
+    try {
+      await pgMessagingReady;
+      const [leadsResult, messagesResult, feedbackResult, latestLeadResult] = await Promise.all([
+        pgPool.query("SELECT COUNT(*)::int AS value FROM leads"),
+        pgPool.query("SELECT COUNT(*)::int AS value FROM messages"),
+        pgPool.query("SELECT COUNT(*)::int AS value FROM feedback"),
+        pgPool.query(
+          "SELECT session_id, model, last_intent, last_source, updated_at FROM leads ORDER BY updated_at DESC LIMIT 1"
+        )
+      ]);
+
+      return {
+        ok: true,
+        engine: "postgres",
+        configuredWith: process.env.NEON_DATABASE_URL ? "NEON_DATABASE_URL" : "DATABASE_URL",
+        counts: {
+          leads: leadsResult.rows?.[0]?.value ?? 0,
+          messages: messagesResult.rows?.[0]?.value ?? 0,
+          feedback: feedbackResult.rows?.[0]?.value ?? 0
+        },
+        latestLead: latestLeadResult.rows?.[0] || null
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        engine: "postgres",
+        configuredWith: process.env.NEON_DATABASE_URL ? "NEON_DATABASE_URL" : "DATABASE_URL",
+        reason: error?.message || "postgres check failed"
+      };
+    }
+  }
+
+  return {
+    engine: "sqlite",
+    configuredWith: "SQLITE_PATH",
+    ...getSqliteHealth()
+  };
+}
+
 export async function getInventoryOverview() {
   if (usePgInventory && pgPool) {
     await pgInventoryReady;

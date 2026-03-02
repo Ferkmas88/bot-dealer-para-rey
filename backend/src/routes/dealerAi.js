@@ -9,7 +9,7 @@ import {
   saveDealerFeedback,
   saveDealerTurn
 } from "../services/dealerSessionStore.js";
-import { getSqliteHealth } from "../services/sqliteLeadStore.js";
+import { getStorageHealth } from "../services/sqliteLeadStore.js";
 
 const payloadSchema = z.object({
   message: z.string().min(1),
@@ -109,8 +109,8 @@ dealerAiRouter.get("/dealer/ai/session/:sessionId", (req, res) => {
   return res.json(summary);
 });
 
-dealerAiRouter.get("/dealer/ai/storage", (_req, res) => {
-  const sqlite = getSqliteHealth();
-  const status = sqlite.ok ? 200 : 500;
-  return res.status(status).json({ sqlite });
+dealerAiRouter.get("/dealer/ai/storage", async (_req, res) => {
+  const storage = await getStorageHealth();
+  const status = storage.ok ? 200 : 500;
+  return res.status(status).json({ storage });
 });
