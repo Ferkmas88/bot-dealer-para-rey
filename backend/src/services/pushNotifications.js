@@ -62,3 +62,50 @@ export async function sendInboundWhatsAppPush({ sessionId, from, message }) {
 
   return { sent, skipped: false };
 }
+
+export async function getPushRuntimeStatus() {
+  const config = getVapidConfig();
+  const subscriptions = await listPushSubscriptions();
+  const unreadTotal = await getUnreadMessagesTotal();
+  return {
+    enabled: config.enabled,
+    subscriptions: subscriptions.length,
+    unreadTotal
+  };
+}
+
+export async function sendTestPush() {
+  const config = configureWebPush();
+  if (!config.enabled) return { sent: 0, skipped: true, reason: "vapid_not_configured" };
+
+  const subscriptions = await listPushSubscriptions();
+  if (!subscriptions.length) return { sent: 0, skipped: true, reason: "no_subscriptions" };
+
+  const badgeCount = await getUnreadMessagesTotal();
+  const payload = JSON.stringify({
+    title: "Prueba de notificacion",
+    body: "Si ves esto, push esta conectado correctamente.",
+    icon: "/2026-01-14.webp",
+    badge: "/2026-01-14.webp",
+    tag: "dealer-whatsapp-inbox-test",
+    url: "/",
+    badgeCount
+  });
+
+  let sent = 0;
+  await Promise.all(
+    subscriptions.map(async (subscription) => {
+      try {
+        await webpush.sendNotification(subscription, payload);
+        sent += 1;
+      } catch (error) {
+        const statusCode = Number(error?.statusCode || 0);
+        if (statusCode === 404 || statusCode === 410) {
+          await deletePushSubscription(subscription.endpoint);
+        }
+      }
+    })
+  );
+
+  return { sent, skipped: false };
+}

@@ -16,7 +16,7 @@ import {
   updateInventoryUnit
 } from "../services/sqliteLeadStore.js";
 import { sendManualWhatsAppReply } from "../services/twilioSender.js";
-import { getPushPublicConfig } from "../services/pushNotifications.js";
+import { getPushPublicConfig, getPushRuntimeStatus, sendTestPush } from "../services/pushNotifications.js";
 
 const inventoryPayloadSchema = z.object({
   make: z.string().min(1),
@@ -174,4 +174,14 @@ dealerDbAdminRouter.post("/dealer/push/unsubscribe", async (req, res) => {
 
   await deletePushSubscription(endpoint);
   return res.json({ ok: true });
+});
+
+dealerDbAdminRouter.get("/dealer/push/status", async (_req, res) => {
+  const status = await getPushRuntimeStatus();
+  return res.json(status);
+});
+
+dealerDbAdminRouter.post("/dealer/push/test", async (_req, res) => {
+  const result = await sendTestPush();
+  return res.json(result);
 });
