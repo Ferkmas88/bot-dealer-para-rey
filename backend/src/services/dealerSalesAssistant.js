@@ -152,6 +152,17 @@ function extractLooseCustomerName(text) {
   return raw;
 }
 
+function looksLikeInvalidName(text) {
+  const value = String(text || "").trim().toLowerCase();
+  if (!value) return true;
+  if (/\d/.test(value)) return true;
+  if (/(quiero|cita|agendar|agenda|appointment|hoy|manana|mañana|carro|auto|pickup|suv|sedan|por la tarde)/i.test(value)) {
+    return true;
+  }
+  if (value.length < 2 || value.length > 40) return true;
+  return false;
+}
+
 function extractAppointmentSlot(text) {
   const lower = (text || "").toLowerCase();
   const day =
@@ -1171,7 +1182,10 @@ export async function processDealerSessionMessageWithLLM(message, context = {}, 
     const intent = "buying_interest";
     const baseContext = mergeContext(context, extracted, intent);
     const appointmentSlot = slotFromMessage ?? context?.appointmentSlot ?? null;
-    const customerName = nameFromMessage ?? context?.customerName ?? null;
+    const safeExistingName = looksLikeInvalidName(context?.customerName) ? null : context?.customerName;
+    const looseNameFromMessage = context?.appointmentSlot ? extractLooseCustomerName(safeMessage) : null;
+    const safeLooseName = looksLikeInvalidName(looseNameFromMessage) ? null : looseNameFromMessage;
+    const customerName = nameFromMessage ?? safeLooseName ?? safeExistingName ?? null;
     const updatedContext = {
       ...baseContext,
       appointmentSlot,
@@ -1183,6 +1197,19 @@ export async function processDealerSessionMessageWithLLM(message, context = {}, 
     if (!appointmentSlot) {
       return {
         reply: "Perfecto. Te ayudo con la cita. Para cuando quieres venir (dia y hora)?",
+        intent,
+        entities,
+        suggestions: buildSuggestions(intent, entities, safeMessage),
+        skill,
+        source: "appointment-fastpath",
+        mediaUrl: null,
+        updatedContext
+      };
+    }
+
+    if (!slotHasExplicitTime(appointmentSlot)) {
+      return {
+        reply: `Perfecto. Me falta la hora exacta para agendar. Que hora te funciona ${appointmentSlot}? (ejemplo: 11am, 2pm o 4pm)`,
         intent,
         entities,
         suggestions: buildSuggestions(intent, entities, safeMessage),
@@ -1206,9 +1233,9 @@ export async function processDealerSessionMessageWithLLM(message, context = {}, 
       };
     }
 
-    if (!slotHasExplicitTime(appointmentSlot)) {
+    if (!updatedContext?.contact?.phone) {
       return {
-        reply: `Gracias, ${customerName}. Me falta la hora exacta para agendar. Que hora te funciona ${appointmentSlot}? (ejemplo: 11am, 2pm o 4pm)`,
+        reply: `Perfecto, ${customerName}. Tengo ${appointmentSlot}. Antes de cerrar, comparteme tu telefono de contacto por favor.`,
         intent,
         entities,
         suggestions: buildSuggestions(intent, entities, safeMessage),
@@ -1220,7 +1247,7 @@ export async function processDealerSessionMessageWithLLM(message, context = {}, 
     }
 
     return {
-      reply: `Perfecto 🔥\nTengo tu cita para ${appointmentSlot}.\nNombre: ${customerName}\nTe esperamos en el lote.\nSi necesitas direccion o cambiar horario, me dices.`,
+      reply: `Perfecto 🔥\nTengo tu cita para ${appointmentSlot}.\nNombre: ${customerName}\nTelefono: ${updatedContext.contact.phone}\nTe esperamos en el lote.\nSi necesitas direccion o cambiar horario, me dices.`,
       intent,
       entities,
       suggestions: buildSuggestions(intent, entities, safeMessage),

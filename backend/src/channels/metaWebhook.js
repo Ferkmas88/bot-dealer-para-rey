@@ -179,6 +179,7 @@ function extractLooseCustomerName(text) {
   ) {
     return null;
   }
+  if (/(quiero|cita|agendar|agenda|appointment|carro|auto|pickup|suv|sedan|hoy|manana|ma�ana|por la tarde)/i.test(lower)) return null;
   const tokens = raw.split(/\s+/).filter(Boolean);
   if (!tokens.length || tokens.length > 3) return null;
   if (!tokens.every((token) => /^[a-zA-ZÀ-ÿ' -]{2,20}$/.test(token))) return null;
@@ -267,7 +268,7 @@ async function handleAppointmentFlow({ sessionId, incomingText, lead = null }) {
     });
     return {
       handled: true,
-      reply: `Perfecto, tu cita quedo confirmada para ${formatOptionLine(requestedAt)}.`
+      reply: `Perfecto, tu cita quedo confirmada para ${formatOptionLine(requestedAt)}.\nTelefono de contacto: ${lead?.phone || "compartemelo por favor"}.`
     };
   }
 
@@ -297,7 +298,7 @@ async function handleAppointmentFlow({ sessionId, incomingText, lead = null }) {
       appointment: confirmed,
       lead
     });
-    return { handled: true, reply: "Perfecto, cita confirmada. Te esperamos. Si necesitas cambiar horario, responde 2." };
+    return { handled: true, reply: "Perfecto, cita confirmada. Te esperamos. Si necesitas cambiar horario, dime reprogramar." };
   }
 
   if (openAppt && providedName) {
@@ -309,7 +310,7 @@ async function handleAppointmentFlow({ sessionId, incomingText, lead = null }) {
     if (openAppt.confirmation_state === "AWAITING_CONFIRMATION") {
       return {
         handled: true,
-        reply: `Perfecto, ${providedName}. Ya tengo tu nombre.\nTu cita sigue para ${formatOptionLine(openAppt.scheduled_at)}.`
+        reply: `Perfecto, ${providedName}. Ya tengo tu nombre.\nTu cita sigue para ${formatOptionLine(openAppt.scheduled_at)}.\nConfirmame tu telefono de contacto para cerrar datos.`
       };
     }
     if (openAppt.confirmation_state === "PROPOSED") {
@@ -385,7 +386,7 @@ async function handleAppointmentFlow({ sessionId, incomingText, lead = null }) {
     });
     return {
       handled: true,
-      reply: `Perfecto, te agende para ${formatOptionLine(requestedAt)}. Si quieres cambiar el horario, dime reprogramar.`
+      reply: `Perfecto, te agende para ${formatOptionLine(requestedAt)}.\nTelefono de contacto: ${lead?.phone || "compartemelo por favor"}.\nSi quieres cambiar el horario, dime reprogramar.`
     };
   }
 
@@ -661,3 +662,5 @@ metaWebhookRouter.post("/whatsapp", async (req, res) => {
     return res.status(500).json({ ok: false, error: "Webhook processing failed" });
   }
 });
+
+
