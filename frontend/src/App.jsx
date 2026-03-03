@@ -12,7 +12,6 @@ const DB_API_URL = `${API_BASE_URL}/dealer/db/inventory`;
 const APPOINTMENTS_API_URL = `${API_BASE_URL}/dealer/db/appointments`;
 const LEADS_API_URL = `${API_BASE_URL}/dealer/db/leads`;
 const CONVERSATIONS_API_URL = `${API_BASE_URL}/dealer/db/conversations`;
-const UPLOADS_API_URL = `${API_BASE_URL}/dealer/db/uploads`;
 const PUSH_CONFIG_URL = `${API_BASE_URL}/dealer/push/config`;
 const PUSH_SUBSCRIBE_URL = `${API_BASE_URL}/dealer/push/subscribe`;
 const PUSH_UNSUBSCRIBE_URL = `${API_BASE_URL}/dealer/push/unsubscribe`;
@@ -48,14 +47,6 @@ const EMPTY_FORM = {
   status: "available",
   featured: 0
 };
-
-const QUICK_REPLY_TEMPLATES = [
-  { label: "Estoy aqui", text: "Estoy aqui para ayudarte ahora mismo. Que auto te interesa?" },
-  { label: "Ubicacion", text: "Estamos en 3510 Dixie Hwy, Louisville, KY 40216. Quieres venir hoy?" },
-  { label: "Pedir nombre", text: "Perfecto. Me compartes tu nombre completo para agendarte?" },
-  { label: "Pedir down", text: "Que down payment aproximado tienes hoy? Asi te doy opciones reales." },
-  { label: "Pasar humano", text: "Te paso con un asesor humano ahora mismo. En breve te escribimos." }
-];
 
 function formatSessionLabel(sessionId) {
   if (!sessionId) return "Sin session";
@@ -224,8 +215,6 @@ export default function App() {
   const [messagesError, setMessagesError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [manualReplyText, setManualReplyText] = useState("");
-  const [manualMediaUrl, setManualMediaUrl] = useState("");
-  const [uploadingMedia, setUploadingMedia] = useState(false);
   const [manualReplyError, setManualReplyError] = useState("");
   const [manualReplySuccess, setManualReplySuccess] = useState("");
   const [manualSending, setManualSending] = useState(false);
@@ -953,8 +942,7 @@ export default function App() {
       return;
     }
     const message = String(rawMessage || "").trim();
-    const mediaUrl = String(manualMediaUrl || "").trim();
-    if (!message && !mediaUrl) return;
+    if (!message) return;
 
     setManualReplyError("");
     setManualReplySuccess("");
@@ -965,63 +953,19 @@ export default function App() {
       const res = await fetch(`${CONVERSATIONS_API_URL}/${encoded}/reply`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, mediaUrl })
+        body: JSON.stringify({ message })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "No se pudo enviar");
 
       setManualReplyText("");
-      setManualMediaUrl("");
-      setManualReplySuccess(mediaUrl ? "Mensaje multimedia enviado." : "Mensaje enviado.");
+      setManualReplySuccess("Mensaje enviado.");
       await loadMessagesForSession(selectedSessionId);
       await loadConversations({ keepSelection: true });
     } catch (error) {
       setManualReplyError(error?.message || "No pude enviar mensaje manual.");
     } finally {
       setManualSending(false);
-    }
-  }
-
-  function fileToDataUrl(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || ""));
-      reader.onerror = () => reject(new Error("No se pudo leer el archivo."));
-      reader.readAsDataURL(file);
-    });
-  }
-
-  async function handleManualFileUpload(e) {
-    const file = e.target?.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    if (!selectedSessionId || (!selectedSessionId.startsWith("wa:") && !selectedSessionId.startsWith("wa_meta:"))) {
-      setManualReplyError("Selecciona un chat de WhatsApp para subir archivo.");
-      return;
-    }
-
-    setManualReplyError("");
-    setManualReplySuccess("");
-    setUploadingMedia(true);
-    try {
-      const dataUrl = await fileToDataUrl(file);
-      const res = await fetch(UPLOADS_API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          filename: file.name,
-          mimeType: file.type || "application/octet-stream",
-          dataUrl
-        })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "No se pudo subir archivo.");
-      setManualMediaUrl(data?.url || "");
-      setManualReplySuccess("Archivo subido. Ahora puedes enviarlo.");
-    } catch (error) {
-      setManualReplyError(error?.message || "Error subiendo archivo.");
-    } finally {
-      setUploadingMedia(false);
     }
   }
 
@@ -1546,28 +1490,6 @@ export default function App() {
                   ) : null}
                 </div>
                 <form className="manual-reply" onSubmit={sendManualReply}>
-                  <div className="quick-replies">
-                    {QUICK_REPLY_TEMPLATES.map((item) => (
-                      <button
-                        key={item.label}
-                        type="button"
-                        className="secondary-btn quick-reply-btn"
-                        onClick={() => sendManualReplyMessage(item.text)}
-                        disabled={!selectedSessionId || manualSending || (!selectedSessionId.startsWith("wa:") && !selectedSessionId.startsWith("wa_meta:"))}
-                      >
-                        {item.label}
-                      </button>
-                    ))}
-                    <label className="secondary-btn quick-reply-btn file-upload-chip">
-                      {uploadingMedia ? "Subiendo..." : "Adjuntar"}
-                      <input
-                        type="file"
-                        accept="image/*,audio/*,video/*,application/pdf"
-                        onChange={handleManualFileUpload}
-                        disabled={!selectedSessionId || manualSending || uploadingMedia || (!selectedSessionId.startsWith("wa:") && !selectedSessionId.startsWith("wa_meta:"))}
-                      />
-                    </label>
-                  </div>
                   <input
                     placeholder={
                       !selectedSessionId
@@ -1580,18 +1502,11 @@ export default function App() {
                     onChange={(e) => setManualReplyText(e.target.value)}
                     disabled={!selectedSessionId || manualSending || (!selectedSessionId.startsWith("wa:") && !selectedSessionId.startsWith("wa_meta:"))}
                   />
-                  <input
-                    className="manual-media-input"
-                    placeholder="URL de imagen/PDF/audio (opcional)"
-                    value={manualMediaUrl}
-                    onChange={(e) => setManualMediaUrl(e.target.value)}
-                    disabled={!selectedSessionId || manualSending || (!selectedSessionId.startsWith("wa:") && !selectedSessionId.startsWith("wa_meta:"))}
-                  />
                   <button
                     type="submit"
-                    disabled={!selectedSessionId || manualSending || uploadingMedia || (!manualReplyText.trim() && !manualMediaUrl.trim()) || (!selectedSessionId.startsWith("wa:") && !selectedSessionId.startsWith("wa_meta:"))}
+                    disabled={!selectedSessionId || manualSending || !manualReplyText.trim() || (!selectedSessionId.startsWith("wa:") && !selectedSessionId.startsWith("wa_meta:"))}
                   >
-                    {manualSending ? "Enviando..." : "Enviar"}
+                    {manualSending ? "Enviando..." : "Responder Manualmente"}
                   </button>
                 </form>
                 {manualReplyError ? <p className="error-text">{manualReplyError}</p> : null}
