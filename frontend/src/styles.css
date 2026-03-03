@@ -523,6 +523,18 @@ button:hover {
   white-space: nowrap;
 }
 
+.file-upload-chip {
+  position: relative;
+  overflow: hidden;
+}
+
+.file-upload-chip input[type="file"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
 button:disabled {
   opacity: 0.7;
   cursor: not-allowed;

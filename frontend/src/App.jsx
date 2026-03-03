@@ -12,6 +12,7 @@ const DB_API_URL = `${API_BASE_URL}/dealer/db/inventory`;
 const APPOINTMENTS_API_URL = `${API_BASE_URL}/dealer/db/appointments`;
 const LEADS_API_URL = `${API_BASE_URL}/dealer/db/leads`;
 const CONVERSATIONS_API_URL = `${API_BASE_URL}/dealer/db/conversations`;
+const UPLOADS_API_URL = `${API_BASE_URL}/dealer/db/uploads`;
 const PUSH_CONFIG_URL = `${API_BASE_URL}/dealer/push/config`;
 const PUSH_SUBSCRIBE_URL = `${API_BASE_URL}/dealer/push/subscribe`;
 const PUSH_UNSUBSCRIBE_URL = `${API_BASE_URL}/dealer/push/unsubscribe`;
@@ -224,6 +225,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [manualReplyText, setManualReplyText] = useState("");
   const [manualMediaUrl, setManualMediaUrl] = useState("");
+  const [uploadingMedia, setUploadingMedia] = useState(false);
   const [manualReplyError, setManualReplyError] = useState("");
   const [manualReplySuccess, setManualReplySuccess] = useState("");
   const [manualSending, setManualSending] = useState(false);
@@ -980,6 +982,49 @@ export default function App() {
     }
   }
 
+  function fileToDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("No se pudo leer el archivo."));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function handleManualFileUpload(e) {
+    const file = e.target?.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!selectedSessionId || (!selectedSessionId.startsWith("wa:") && !selectedSessionId.startsWith("wa_meta:"))) {
+      setManualReplyError("Selecciona un chat de WhatsApp para subir archivo.");
+      return;
+    }
+
+    setManualReplyError("");
+    setManualReplySuccess("");
+    setUploadingMedia(true);
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      const res = await fetch(UPLOADS_API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filename: file.name,
+          mimeType: file.type || "application/octet-stream",
+          dataUrl
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "No se pudo subir archivo.");
+      setManualMediaUrl(data?.url || "");
+      setManualReplySuccess("Archivo subido. Ahora puedes enviarlo.");
+    } catch (error) {
+      setManualReplyError(error?.message || "Error subiendo archivo.");
+    } finally {
+      setUploadingMedia(false);
+    }
+  }
+
   function resetInventoryForm() {
     setInventoryForm(EMPTY_FORM);
     setEditingId(null);
@@ -1513,6 +1558,15 @@ export default function App() {
                         {item.label}
                       </button>
                     ))}
+                    <label className="secondary-btn quick-reply-btn file-upload-chip">
+                      {uploadingMedia ? "Subiendo..." : "Adjuntar"}
+                      <input
+                        type="file"
+                        accept="image/*,audio/*,video/*,application/pdf"
+                        onChange={handleManualFileUpload}
+                        disabled={!selectedSessionId || manualSending || uploadingMedia || (!selectedSessionId.startsWith("wa:") && !selectedSessionId.startsWith("wa_meta:"))}
+                      />
+                    </label>
                   </div>
                   <input
                     placeholder={
@@ -1535,7 +1589,7 @@ export default function App() {
                   />
                   <button
                     type="submit"
-                    disabled={!selectedSessionId || manualSending || (!manualReplyText.trim() && !manualMediaUrl.trim()) || (!selectedSessionId.startsWith("wa:") && !selectedSessionId.startsWith("wa_meta:"))}
+                    disabled={!selectedSessionId || manualSending || uploadingMedia || (!manualReplyText.trim() && !manualMediaUrl.trim()) || (!selectedSessionId.startsWith("wa:") && !selectedSessionId.startsWith("wa_meta:"))}
                   >
                     {manualSending ? "Enviando..." : "Enviar"}
                   </button>

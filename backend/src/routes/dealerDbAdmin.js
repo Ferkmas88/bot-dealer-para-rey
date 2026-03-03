@@ -1,4 +1,8 @@
 import { Router } from "express";
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
   createInventoryUnit,
@@ -79,6 +83,69 @@ const appointmentPatchSchema = z.object({
 const appointmentActionSchema = z.object({
   action: z.enum(["confirm", "reschedule", "cancel"])
 });
+
+const uploadPayloadSchema = z.object({
+  filename: z.string().min(1).max(180),
+  mimeType: z.string().min(1).max(120),
+  dataUrl: z.string().min(20)
+});
+
+const ALLOWED_UPLOAD_MIME = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "audio/mpeg",
+  "audio/mp3",
+  "audio/aac",
+  "audio/ogg",
+  "audio/wav",
+  "audio/mp4",
+  "video/mp4",
+  "video/webm",
+  "application/pdf"
+]);
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const uploadsPublicDir = path.resolve(__dirname, "../../public/uploads");
+
+function sanitizeFilename(value) {
+  const cleaned = String(value || "")
+    .replace(/[^\w.\-]+/g, "_")
+    .replace(/_+/g, "_")
+    .slice(0, 100);
+  return cleaned || "upload";
+}
+
+function parseDataUrl(value) {
+  const str = String(value || "");
+  const match = str.match(/^data:([^;]+);base64,(.+)$/);
+  if (!match) return null;
+  return {
+    mimeType: match[1],
+    base64: match[2]
+  };
+}
+
+function extensionFromMime(mimeType, originalName) {
+  const lower = String(mimeType || "").toLowerCase();
+  const existingExt = path.extname(String(originalName || "")).toLowerCase();
+  if (existingExt) return existingExt;
+  if (lower === "image/jpeg") return ".jpg";
+  if (lower === "image/png") return ".png";
+  if (lower === "image/webp") return ".webp";
+  if (lower === "image/gif") return ".gif";
+  if (lower === "audio/mpeg" || lower === "audio/mp3") return ".mp3";
+  if (lower === "audio/aac") return ".aac";
+  if (lower === "audio/ogg") return ".ogg";
+  if (lower === "audio/wav") return ".wav";
+  if (lower === "audio/mp4") return ".m4a";
+  if (lower === "video/mp4") return ".mp4";
+  if (lower === "video/webm") return ".webm";
+  if (lower === "application/pdf") return ".pdf";
+  return ".bin";
+}
 
 function buildNextAppointmentOptions() {
   const now = new Date();
@@ -295,6 +362,52 @@ dealerDbAdminRouter.post("/dealer/db/conversations/:sessionId/reply", async (req
     return res.status(500).json({
       ok: false,
       error: error?.message || "Failed to send manual reply"
+    });
+  }
+});
+
+dealerDbAdminRouter.post("/dealer/db/uploads", async (req, res) => {
+  const parsed = uploadPayloadSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid upload payload", details: parsed.error.flatten() });
+  }
+
+  const rawData = parseDataUrl(parsed.data.dataUrl);
+  if (!rawData) {
+    return res.status(400).json({ error: "Invalid dataUrl format" });
+  }
+
+  const mimeType = String(parsed.data.mimeType || rawData.mimeType).toLowerCase();
+  if (!ALLOWED_UPLOAD_MIME.has(mimeType)) {
+    return res.status(400).json({ error: "Unsupported file type" });
+  }
+
+  try {
+    const bytes = Buffer.from(rawData.base64, "base64");
+    const maxBytes = 8 * 1024 * 1024;
+    if (!bytes.length || bytes.length > maxBytes) {
+      return res.status(400).json({ error: "File too large (max 8MB)" });
+    }
+
+    await mkdir(uploadsPublicDir, { recursive: true });
+    const safeBase = sanitizeFilename(parsed.data.filename).replace(/\.[^.]+$/, "");
+    const ext = extensionFromMime(mimeType, parsed.data.filename);
+    const storedName = `${Date.now()}-${randomUUID().slice(0, 8)}-${safeBase}${ext}`;
+    const fullPath = path.join(uploadsPublicDir, storedName);
+    await writeFile(fullPath, bytes);
+
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
+    return res.status(201).json({
+      ok: true,
+      filename: storedName,
+      mimeType,
+      size: bytes.length,
+      url: `${baseUrl}/uploads/${storedName}`
+    });
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+      error: error?.message || "Upload failed"
     });
   }
 });
