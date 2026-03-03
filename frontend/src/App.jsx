@@ -75,6 +75,12 @@ function toDateInputValue(value) {
   return date.toISOString().slice(0, 10);
 }
 
+function normalizeLeadStatus(value, fallback = "QUALIFYING") {
+  const allowed = new Set(["NEW", "QUALIFYING", "QUALIFIED", "APPT_PENDING", "BOOKED", "NO_RESPONSE", "CLOSED_WON", "CLOSED_LOST"]);
+  const normalized = String(value || fallback).trim().toUpperCase();
+  return allowed.has(normalized) ? normalized : fallback;
+}
+
 function loadSeenCounts() {
   try {
     const raw = localStorage.getItem(INBOX_SEEN_STORAGE_KEY);
@@ -202,6 +208,9 @@ export default function App() {
   const [appointmentActionLoading, setAppointmentActionLoading] = useState(false);
   const [appointmentActionError, setAppointmentActionError] = useState("");
   const [appointmentActionSuccess, setAppointmentActionSuccess] = useState("");
+  const [leadActionLoading, setLeadActionLoading] = useState(false);
+  const [leadActionError, setLeadActionError] = useState("");
+  const [leadActionSuccess, setLeadActionSuccess] = useState("");
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [messagesError, setMessagesError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -806,6 +815,8 @@ export default function App() {
     if (isMobile) setMobileInboxPanel("chat");
     setManualReplyError("");
     setManualReplySuccess("");
+    setLeadActionError("");
+    setLeadActionSuccess("");
     await markThreadAsRead(targetSessionId);
   }
 
@@ -862,6 +873,60 @@ export default function App() {
       setMessagesError("No pude actualizar Bot ON/OFF.");
     } finally {
       setBotUpdating(false);
+    }
+  }
+
+  async function takeLeadAsHuman() {
+    if (!selectedSessionId || leadActionLoading) return;
+    setLeadActionError("");
+    setLeadActionSuccess("");
+    setLeadActionLoading(true);
+    try {
+      const encoded = encodeURIComponent(selectedSessionId);
+      const targetStatus = normalizeLeadStatus(
+        selectedLead?.status,
+        selectedAppointment ? "APPT_PENDING" : "QUALIFIED"
+      );
+
+      const leadRes = await fetch(`${LEADS_API_URL}/${encoded}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: targetStatus,
+          priority: "HIGH",
+          mode: "HUMAN"
+        })
+      });
+      const leadData = await leadRes.json();
+      if (!leadRes.ok) throw new Error(leadData?.error || "No se pudo actualizar lead");
+
+      await fetch(`${CONVERSATIONS_API_URL}/${encoded}/bot`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: false })
+      });
+
+      setSelectedLead(leadData?.row || null);
+      setSelectedSettings((prev) => ({ ...prev, bot_enabled: 0 }));
+      setConversationRows((prev) =>
+        prev.map((row) =>
+          row.session_id === selectedSessionId
+            ? {
+                ...row,
+                bot_enabled: 0,
+                lead_mode: "HUMAN",
+                lead_priority: "HIGH",
+                lead_status: targetStatus
+              }
+            : row
+        )
+      );
+
+      setLeadActionSuccess("Lead tomado en modo HUMANO.");
+    } catch (error) {
+      setLeadActionError(error?.message || "No se pudo activar modo humano.");
+    } finally {
+      setLeadActionLoading(false);
     }
   }
 
@@ -1324,7 +1389,7 @@ export default function App() {
                       <div className="thread-meta">
                         <span>{formatTimestamp(row.updated_at)}</span>
                         <span>
-                          {Number(row.bot_enabled ?? 1) === 1 ? "Bot ON" : "Bot OFF"} / U:{row.user_messages || 0} B:{row.assistant_messages || 0}
+                          {Number(row.bot_enabled ?? 1) === 1 ? "Bot ON" : "Bot OFF"} / {String(row.lead_mode || "BOT").toUpperCase()} / {String(row.lead_priority || "NORMAL").toUpperCase()} / U:{row.user_messages || 0} B:{row.assistant_messages || 0}
                         </span>
                       </div>
                     </button>
@@ -1344,10 +1409,23 @@ export default function App() {
                   ) : null}
                   <h2>{selectedThread ? formatSessionLabel(selectedThread.session_id) : "Selecciona un chat"}</h2>
                   <p className="subtle">{selectedThread ? selectedThread.session_id : "Esperando seleccion..."}</p>
+                  {selectedLead ? (
+                    <p className="subtle">
+                      Lead: {String(selectedLead.status || selectedThread?.lead_status || "NEW").toUpperCase()} / {String(selectedLead.mode || selectedThread?.lead_mode || "BOT").toUpperCase()} / {String(selectedLead.priority || selectedThread?.lead_priority || "NORMAL").toUpperCase()}
+                    </p>
+                  ) : null}
                   {selectedSessionId ? (
                     <div className="thread-actions">
                       <button type="button" className="secondary-btn" onClick={toggleBotForSelectedContact} disabled={botUpdating}>
                         {botUpdating ? "Guardando..." : Number(selectedSettings?.bot_enabled ?? 1) === 1 ? "Bot ON (clic para OFF)" : "Bot OFF (clic para ON)"}
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-btn"
+                        onClick={takeLeadAsHuman}
+                        disabled={leadActionLoading || String(selectedLead?.mode || selectedThread?.lead_mode || "BOT").toUpperCase() === "HUMAN"}
+                      >
+                        {leadActionLoading ? "Aplicando..." : "Tomar HUMANO"}
                       </button>
                       <button type="button" className="secondary-btn" onClick={() => markThreadAsRead(selectedSessionId)}>
                         Marcar leido
@@ -1389,6 +1467,8 @@ export default function App() {
                   ) : null}
                   {appointmentActionError ? <p className="error-text">{appointmentActionError}</p> : null}
                   {appointmentActionSuccess ? <p className="subtle">{appointmentActionSuccess}</p> : null}
+                  {leadActionError ? <p className="error-text">{leadActionError}</p> : null}
+                  {leadActionSuccess ? <p className="subtle">{leadActionSuccess}</p> : null}
                 </div>
                 {messagesError ? <p className="error-text">{messagesError}</p> : null}
                 <div className="thread-messages" ref={threadMessagesRef}>

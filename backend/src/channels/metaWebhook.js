@@ -4,13 +4,15 @@ import { getDealerSession, getLearningState, saveDealerTurn } from "../services/
 import {
   createAppointment,
   getConversationSettings,
+  getLeadBySessionId,
   getLatestOpenAppointmentForLead,
   persistIncomingUserMessage,
+  persistOutgoingAssistantMessage,
   upsertLeadProfile,
   updateAppointment,
   updateLeadStatus
 } from "../services/sqliteLeadStore.js";
-import { sendAppointmentConfirmedOwnerEmail } from "../services/ownerNotifications.js";
+import { sendAppointmentConfirmedOwnerEmail, sendHotLeadHandoffOwnerEmail } from "../services/ownerNotifications.js";
 
 export const metaWebhookRouter = express.Router();
 
@@ -27,6 +29,10 @@ function inferLeadStatus(text) {
 
 function isHotLead(text) {
   return /(voy hoy|hoy mismo|direccion|llamame|call me|down|enganche|ahora|urgent|urgente)/i.test(text || "");
+}
+
+function requestsHuman(text) {
+  return /(humano|asesor|agent|agente|persona|representante)/i.test(text || "");
 }
 
 function buildNextAppointmentOptions() {
@@ -195,25 +201,88 @@ metaWebhookRouter.post("/whatsapp", async (req, res) => {
   try {
     for (const msg of incoming) {
       const sessionId = `wa_meta:${msg.from}`;
+      const existingLead = await getLeadBySessionId(sessionId);
       const settings = await getConversationSettings(sessionId);
       const botEnabled = Number(settings?.bot_enabled ?? 1) === 1;
+      const hotLead = isHotLead(msg.body);
+      const wantsHuman = requestsHuman(msg.body);
+      const handoffToHuman = hotLead || wantsHuman;
+      const inferredStatus = inferLeadStatus(msg.body);
       await upsertLeadProfile({
         sessionId,
         phone: `+${msg.from}`,
         name: msg.profileName || null,
         source: "whatsapp",
         language: detectLanguage(msg.body),
-        status: inferLeadStatus(msg.body),
-        priority: isHotLead(msg.body) ? "HIGH" : "NORMAL",
-        mode: botEnabled ? "BOT" : "HUMAN",
+        status: inferredStatus,
+        priority: handoffToHuman ? "HIGH" : "NORMAL",
+        mode: botEnabled && !handoffToHuman ? "BOT" : "HUMAN",
         lastMessageAt: new Date().toISOString()
       });
 
+      if (handoffToHuman) {
+        await persistIncomingUserMessage({
+          sessionId,
+          userMessage: msg.body,
+          source: wantsHuman ? "requested-human" : "hot-lead-handoff"
+        });
+
+        const updatedLead = await updateLeadStatus(
+          sessionId,
+          inferredStatus === "APPT_PENDING" ? "APPT_PENDING" : "QUALIFIED",
+          {
+            priority: "HIGH",
+            mode: "HUMAN"
+          }
+        );
+
+        const handoffReply = wantsHuman
+          ? "Perfecto. Te paso con un asesor humano ahora mismo. En breve te escribimos."
+          : "Veo interes urgente. Te conecto con un asesor humano ahora mismo para atenderte mas rapido.";
+
+        await sendWhatsAppText({
+          to: msg.from,
+          text: handoffReply
+        });
+        await persistOutgoingAssistantMessage({
+          sessionId,
+          assistantMessage: handoffReply,
+          source: "human-handoff",
+          intent: "handoff"
+        });
+
+        const shouldNotifyOwner =
+          String(existingLead?.mode || "BOT").toUpperCase() !== "HUMAN" ||
+          String(existingLead?.priority || "NORMAL").toUpperCase() !== "HIGH";
+        if (shouldNotifyOwner) {
+          const openAppt = await getLatestOpenAppointmentForLead(sessionId);
+          sendHotLeadHandoffOwnerEmail({
+            to: process.env.OWNER_NOTIFICATION_EMAIL || "rey1309ltu@gmail.com",
+            lead: updatedLead,
+            appointment: openAppt,
+            lastMessage: msg.body
+          }).catch(() => {});
+        }
+
+        continue;
+      }
+
       const appointmentFlow = await handleAppointmentFlow({ sessionId, incomingText: msg.body });
       if (appointmentFlow.handled) {
+        await persistIncomingUserMessage({
+          sessionId,
+          userMessage: msg.body,
+          source: "appointment-flow"
+        });
         await sendWhatsAppText({
           to: msg.from,
           text: appointmentFlow.reply
+        });
+        await persistOutgoingAssistantMessage({
+          sessionId,
+          assistantMessage: appointmentFlow.reply,
+          source: "appointment-flow",
+          intent: "appointment_flow"
         });
         continue;
       }
@@ -231,6 +300,9 @@ metaWebhookRouter.post("/whatsapp", async (req, res) => {
       const learningState = getLearningState(sessionId);
 
       const aiResult = await processDealerSessionMessageWithLLM(msg.body, session.context, learningState);
+      if (!existingLead) {
+        aiResult.reply = `Hola, soy tu asistente virtual 24/7. Si prefieres asesor humano, escribe HUMANO.\n\n${aiResult.reply}`;
+      }
 
       await saveDealerTurn({
         sessionId,

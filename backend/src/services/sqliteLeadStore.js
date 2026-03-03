@@ -868,6 +868,11 @@ export async function listDealerConversations({ limit = 100, query = "" } = {}) 
           ) AS last_role,
           COALESCE(s.bot_enabled, 1) AS bot_enabled,
           s.last_read_at AS last_read_at,
+          COALESCE(l.status, 'NEW') AS lead_status,
+          COALESCE(l.priority, 'NORMAL') AS lead_priority,
+          COALESCE(l.mode, 'BOT') AS lead_mode,
+          l.name AS lead_name,
+          l.phone AS lead_phone,
           (
             SELECT COUNT(1)::int
             FROM messages um
@@ -877,8 +882,9 @@ export async function listDealerConversations({ limit = 100, query = "" } = {}) 
           ) AS unread_count
         FROM messages m
         LEFT JOIN conversation_settings s ON s.session_id = m.session_id
+        LEFT JOIN leads l ON l.session_id = m.session_id
         ${hasQuery ? "WHERE LOWER(m.session_id) LIKE $1 " : ""}
-        GROUP BY m.session_id, s.bot_enabled, s.last_read_at
+        GROUP BY m.session_id, s.bot_enabled, s.last_read_at, l.status, l.priority, l.mode, l.name, l.phone
         ORDER BY updated_at DESC
         LIMIT $${hasQuery ? 2 : 1}
       `,
@@ -909,6 +915,11 @@ export async function listDealerConversations({ limit = 100, query = "" } = {}) 
         ) AS last_role,
         COALESCE(s.bot_enabled, 1) AS bot_enabled,
         s.last_read_at AS last_read_at,
+        COALESCE(l.status, 'NEW') AS lead_status,
+        COALESCE(l.priority, 'NORMAL') AS lead_priority,
+        COALESCE(l.mode, 'BOT') AS lead_mode,
+        l.name AS lead_name,
+        l.phone AS lead_phone,
         (
           SELECT COUNT(1)
           FROM messages um
@@ -920,8 +931,9 @@ export async function listDealerConversations({ limit = 100, query = "" } = {}) 
         ) AS unread_count
       FROM messages m
       LEFT JOIN conversation_settings s ON s.session_id = m.session_id
+      LEFT JOIN leads l ON l.session_id = m.session_id
       ${hasQuery ? "WHERE LOWER(m.session_id) LIKE ? " : ""}
-      GROUP BY m.session_id
+      GROUP BY m.session_id, s.bot_enabled, s.last_read_at, l.status, l.priority, l.mode, l.name, l.phone
       ORDER BY updated_at DESC
       LIMIT ?
     `;
@@ -932,6 +944,56 @@ export async function listDealerConversations({ limit = 100, query = "" } = {}) 
     : statement.all(safeLimit);
 
   return rows;
+}
+
+export async function getConsecutiveAssistantMessagesSinceLastUser(sessionId, { maxScan = 20 } = {}) {
+  if (!sessionId) return 0;
+  const safeScan = Number.isFinite(Number(maxScan)) ? Math.max(1, Math.min(200, Number(maxScan))) : 20;
+
+  if (usePgInventory && pgPool) {
+    await pgMessagingReady;
+    const result = await pgPool.query(
+      `
+        SELECT role
+        FROM messages
+        WHERE session_id = $1
+        ORDER BY created_at DESC, id DESC
+        LIMIT $2
+      `,
+      [sessionId, safeScan]
+    );
+    let streak = 0;
+    for (const row of result.rows || []) {
+      if (row.role === "assistant") {
+        streak += 1;
+        continue;
+      }
+      if (row.role === "user") break;
+    }
+    return streak;
+  }
+
+  const rows = db
+    .prepare(
+      `
+      SELECT role
+      FROM messages
+      WHERE session_id = ?
+      ORDER BY created_at DESC, id DESC
+      LIMIT ?
+      `
+    )
+    .all(sessionId, safeScan);
+
+  let streak = 0;
+  for (const row of rows) {
+    if (row.role === "assistant") {
+      streak += 1;
+      continue;
+    }
+    if (row.role === "user") break;
+  }
+  return streak;
 }
 
 export async function listDealerMessagesBySession(sessionId, { limit = 500 } = {}) {

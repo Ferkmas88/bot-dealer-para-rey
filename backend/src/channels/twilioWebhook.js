@@ -5,14 +5,16 @@ import { getDealerSession, getLearningState, saveDealerTurn } from "../services/
 import {
   createAppointment,
   getConversationSettings,
+  getLeadBySessionId,
   getLatestOpenAppointmentForLead,
   persistIncomingUserMessage,
+  persistOutgoingAssistantMessage,
   upsertLeadProfile,
   updateAppointment,
   updateLeadStatus
 } from "../services/sqliteLeadStore.js";
 import { sendInboundWhatsAppPush } from "../services/pushNotifications.js";
-import { sendAppointmentConfirmedOwnerEmail } from "../services/ownerNotifications.js";
+import { sendAppointmentConfirmedOwnerEmail, sendHotLeadHandoffOwnerEmail } from "../services/ownerNotifications.js";
 
 export const twilioWebhookRouter = express.Router();
 const cadenceBySession = new Map();
@@ -77,6 +79,10 @@ function inferLeadStatus(text) {
 
 function isHotLead(text) {
   return /(voy hoy|hoy mismo|direccion|llamame|call me|down|enganche|ahora|urgent|urgente)/i.test(text || "");
+}
+
+function requestsHuman(text) {
+  return /(humano|asesor|agent|agente|persona|representante)/i.test(text || "");
 }
 
 function buildNextAppointmentOptions() {
@@ -171,22 +177,86 @@ twilioWebhookRouter.post("/whatsapp", async (req, res) => {
   const sessionId = `wa:${from}`;
 
   try {
+    const existingLead = await getLeadBySessionId(sessionId);
     const settings = await getConversationSettings(sessionId);
     const botEnabled = Number(settings?.bot_enabled ?? 1) === 1;
+    const hotLead = isHotLead(incomingText);
+    const wantsHuman = requestsHuman(incomingText);
+    const handoffToHuman = hotLead || wantsHuman;
+    const inferredStatus = inferLeadStatus(incomingText);
     await upsertLeadProfile({
       sessionId,
       phone: from.replace(/^whatsapp:/, ""),
       source: "whatsapp",
       language: detectLanguage(incomingText),
       intent: null,
-      status: inferLeadStatus(incomingText),
-      priority: isHotLead(incomingText) ? "HIGH" : "NORMAL",
-      mode: botEnabled ? "BOT" : "HUMAN",
+      status: inferredStatus,
+      priority: handoffToHuman ? "HIGH" : "NORMAL",
+      mode: botEnabled && !handoffToHuman ? "BOT" : "HUMAN",
       lastMessageAt: new Date().toISOString()
     });
 
+    if (handoffToHuman) {
+      await persistIncomingUserMessage({
+        sessionId,
+        userMessage: incomingText,
+        source: wantsHuman ? "requested-human" : "hot-lead-handoff"
+      });
+
+      const updatedLead = await updateLeadStatus(
+        sessionId,
+        inferredStatus === "APPT_PENDING" ? "APPT_PENDING" : "QUALIFIED",
+        {
+          priority: "HIGH",
+          mode: "HUMAN"
+        }
+      );
+
+      const handoffReply = wantsHuman
+        ? "Perfecto. Te paso con un asesor humano ahora mismo. En breve te escribimos."
+        : "Veo interes urgente. Te conecto con un asesor humano ahora mismo para atenderte mas rapido.";
+
+      await persistOutgoingAssistantMessage({
+        sessionId,
+        assistantMessage: handoffReply,
+        source: "human-handoff",
+        intent: "handoff"
+      });
+
+      sendInboundWhatsAppPush({ sessionId, from, message: incomingText }).catch(() => {});
+
+      const shouldNotifyOwner =
+        String(existingLead?.mode || "BOT").toUpperCase() !== "HUMAN" ||
+        String(existingLead?.priority || "NORMAL").toUpperCase() !== "HIGH";
+
+      if (shouldNotifyOwner) {
+        const openAppt = await getLatestOpenAppointmentForLead(sessionId);
+        sendHotLeadHandoffOwnerEmail({
+          to: process.env.OWNER_NOTIFICATION_EMAIL || "rey1309ltu@gmail.com",
+          lead: updatedLead,
+          appointment: openAppt,
+          lastMessage: incomingText
+        }).catch(() => {});
+      }
+
+      const twiml = new twilio.twiml.MessagingResponse();
+      twiml.message().body(handoffReply);
+      return res.type("text/xml").send(twiml.toString());
+    }
+
     const appointmentFlow = await handleAppointmentFlow({ sessionId, incomingText });
     if (appointmentFlow.handled) {
+      await persistIncomingUserMessage({
+        sessionId,
+        userMessage: incomingText,
+        source: "appointment-flow"
+      });
+      await persistOutgoingAssistantMessage({
+        sessionId,
+        assistantMessage: appointmentFlow.reply,
+        source: "appointment-flow",
+        intent: "appointment_flow"
+      });
       const twiml = new twilio.twiml.MessagingResponse();
       twiml.message().body(appointmentFlow.reply);
       return res.type("text/xml").send(twiml.toString());
@@ -224,6 +294,10 @@ twilioWebhookRouter.post("/whatsapp", async (req, res) => {
       session.context,
       learningState
     );
+
+    if (!existingLead) {
+      aiResult.reply = `Hola, soy tu asistente virtual 24/7. Si prefieres asesor humano, escribe HUMANO.\n\n${aiResult.reply}`;
+    }
 
     await saveDealerTurn({
       sessionId,

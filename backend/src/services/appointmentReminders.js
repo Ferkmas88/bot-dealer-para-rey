@@ -1,4 +1,4 @@
-import { findAppointmentsForReminder, updateAppointment } from "./sqliteLeadStore.js";
+import { findAppointmentsForReminder, getConsecutiveAssistantMessagesSinceLastUser, updateAppointment } from "./sqliteLeadStore.js";
 import { sendManualWhatsAppReply } from "./twilioSender.js";
 import { persistOutgoingAssistantMessage } from "./sqliteLeadStore.js";
 
@@ -14,6 +14,19 @@ function buildReminderMessage({ scheduledAt, minutesBefore }) {
 async function sendReminderForAppointment(appointment, minutesBefore) {
   const sessionId = appointment?.lead_session_id;
   if (!sessionId || !String(sessionId).startsWith("wa:")) return { ok: false, skipped: true };
+  const assistantStreak = await getConsecutiveAssistantMessagesSinceLastUser(sessionId, { maxScan: 30 });
+  if (assistantStreak >= 2) {
+    if (minutesBefore <= 20) {
+      await updateAppointment(appointment.id, {
+        reminder_15m_sent_at: new Date().toISOString()
+      });
+    } else {
+      await updateAppointment(appointment.id, {
+        reminder_2h_sent_at: new Date().toISOString()
+      });
+    }
+    return { ok: false, skipped: true, reason: "assistant_streak_limit" };
+  }
   const message = buildReminderMessage({ scheduledAt: appointment.scheduled_at, minutesBefore });
 
   await sendManualWhatsAppReply({ sessionId, body: message });
