@@ -1,4 +1,4 @@
-const CACHE_NAME = "empire-rey-wsp-v1";
+const CACHE_NAME = "empire-rey-wsp-v2";
 const APP_SHELL = ["/wsp", "/manifest-wsp.webmanifest", "/2026-01-14.webp"];
 
 self.addEventListener("install", (event) => {
