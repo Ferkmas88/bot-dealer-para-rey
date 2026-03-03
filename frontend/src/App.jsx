@@ -217,6 +217,12 @@ export default function App() {
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [messagesError, setMessagesError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [newContactPhone, setNewContactPhone] = useState("");
+  const [newContactName, setNewContactName] = useState("");
+  const [newContactProvider, setNewContactProvider] = useState("twilio");
+  const [createContactLoading, setCreateContactLoading] = useState(false);
+  const [createContactError, setCreateContactError] = useState("");
+  const [createContactSuccess, setCreateContactSuccess] = useState("");
   const [manualReplyText, setManualReplyText] = useState("");
   const [manualReplyError, setManualReplyError] = useState("");
   const [manualReplySuccess, setManualReplySuccess] = useState("");
@@ -1003,6 +1009,46 @@ export default function App() {
     }
   }
 
+  async function createWhatsappContact(e) {
+    e.preventDefault();
+    if (createContactLoading) return;
+    const phone = String(newContactPhone || "").trim();
+    const name = String(newContactName || "").trim();
+    if (!phone) {
+      setCreateContactError("Escribe un telefono.");
+      return;
+    }
+
+    setCreateContactLoading(true);
+    setCreateContactError("");
+    setCreateContactSuccess("");
+    try {
+      const res = await fetch(`${CONVERSATIONS_API_URL}/create-contact`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phone,
+          name,
+          provider: newContactProvider
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "No se pudo crear contacto");
+
+      setNewContactPhone("");
+      setNewContactName("");
+      setCreateContactSuccess("Contacto agregado.");
+      await loadConversations({ keepSelection: false });
+      if (data?.session_id) {
+        await handleSelectConversation(data.session_id);
+      }
+    } catch (error) {
+      setCreateContactError(error?.message || "No se pudo crear contacto.");
+    } finally {
+      setCreateContactLoading(false);
+    }
+  }
+
   function resetInventoryForm() {
     setInventoryForm(EMPTY_FORM);
     setEditingId(null);
@@ -1453,6 +1499,27 @@ export default function App() {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
+                <form className="thread-add-contact" onSubmit={createWhatsappContact}>
+                  <input
+                    placeholder="Telefono (+1502...)"
+                    value={newContactPhone}
+                    onChange={(e) => setNewContactPhone(e.target.value)}
+                  />
+                  <input
+                    placeholder="Nombre (opcional)"
+                    value={newContactName}
+                    onChange={(e) => setNewContactName(e.target.value)}
+                  />
+                  <select value={newContactProvider} onChange={(e) => setNewContactProvider(e.target.value)}>
+                    <option value="twilio">Twilio</option>
+                    <option value="meta">Meta</option>
+                  </select>
+                  <button type="submit" className="secondary-btn" disabled={createContactLoading}>
+                    {createContactLoading ? "Agregando..." : "Agregar contacto"}
+                  </button>
+                </form>
+                {createContactError ? <p className="error-text">{createContactError}</p> : null}
+                {createContactSuccess ? <p className="subtle">{createContactSuccess}</p> : null}
                 {conversationsError ? <p className="error-text">{conversationsError}</p> : null}
                 <div className="thread-scroll">
                   {conversationRows.map((row) => (

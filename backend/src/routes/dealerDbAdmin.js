@@ -21,6 +21,7 @@ import {
   persistOutgoingAssistantMessage,
   setConversationBotEnabled,
   listInventory,
+  upsertLeadProfile,
   upsertPushSubscription,
   deletePushSubscription,
   updateAppointment,
@@ -82,6 +83,12 @@ const appointmentPatchSchema = z.object({
 
 const appointmentActionSchema = z.object({
   action: z.enum(["confirm", "reschedule", "cancel"])
+});
+
+const createWhatsappContactSchema = z.object({
+  phone: z.string().min(7),
+  name: z.string().optional().default(""),
+  provider: z.enum(["twilio", "meta"]).optional().default("twilio")
 });
 
 const uploadPayloadSchema = z.object({
@@ -160,6 +167,14 @@ function formatOptionLine(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString("en-US", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+function normalizePhoneForWhatsapp(raw) {
+  const cleaned = String(raw || "").trim().replace(/[^\d+]/g, "");
+  const digits = cleaned.replace(/\D/g, "");
+  if (!digits) return null;
+  const e164 = cleaned.startsWith("+") ? `+${digits}` : `+${digits}`;
+  return { e164, digits };
 }
 
 export const dealerDbAdminRouter = Router();
@@ -306,6 +321,46 @@ dealerDbAdminRouter.get("/dealer/db/conversations", async (req, res) => {
   const query = typeof req.query.query === "string" ? req.query.query : "";
   const rows = await listDealerConversations({ limit, query });
   return res.json({ rows });
+});
+
+dealerDbAdminRouter.post("/dealer/db/conversations/create-contact", async (req, res) => {
+  const parsed = createWhatsappContactSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid contact payload", details: parsed.error.flatten() });
+  }
+
+  const normalized = normalizePhoneForWhatsapp(parsed.data.phone);
+  if (!normalized) {
+    return res.status(400).json({ error: "Invalid phone number" });
+  }
+
+  const provider = parsed.data.provider || "twilio";
+  const sessionId = provider === "meta" ? `wa_meta:${normalized.digits}` : `wa:whatsapp:${normalized.e164}`;
+  const displayName = String(parsed.data.name || "").trim();
+
+  const lead = await upsertLeadProfile({
+    sessionId,
+    name: displayName || null,
+    phone: normalized.e164,
+    source: "whatsapp",
+    language: "es",
+    intent: "manual_contact",
+    status: "NEW",
+    priority: "NORMAL",
+    mode: "HUMAN",
+    lastMessageAt: new Date().toISOString()
+  });
+
+  await persistOutgoingAssistantMessage({
+    sessionId,
+    assistantMessage: `Contacto agregado manualmente${displayName ? `: ${displayName}` : ""}.`,
+    source: "manual-contact",
+    intent: "manual_contact"
+  });
+  await setConversationBotEnabled(sessionId, false);
+  await markConversationRead(sessionId);
+
+  return res.status(201).json({ ok: true, session_id: sessionId, lead });
 });
 
 dealerDbAdminRouter.get("/dealer/db/conversations/:sessionId/messages", async (req, res) => {

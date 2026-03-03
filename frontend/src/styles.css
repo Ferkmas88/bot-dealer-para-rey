@@ -399,6 +399,13 @@ button:hover {
   margin-bottom: 10px;
 }
 
+.thread-add-contact {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
 .thread-scroll {
   overflow-y: auto;
   overflow-x: hidden;
@@ -692,6 +699,13 @@ body[data-route-mode="whatsapp"] .thread-list {
   min-height: 0;
   height: 100%;
   overflow: hidden;
+}
+
+body[data-route-mode="whatsapp"] .thread-add-contact input,
+body[data-route-mode="whatsapp"] .thread-add-contact select {
+  background: #0f161b;
+  border-color: #2a3942;
+  color: #d6e2e8;
 }
 
 body[data-route-mode="whatsapp"] .thread-chat {
