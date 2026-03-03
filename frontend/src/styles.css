@@ -759,7 +759,7 @@ body[data-route-mode="whatsapp"] .thread-chat-head {
 body[data-route-mode="whatsapp"] .thread-messages {
   max-height: none;
   margin-top: 0;
-  padding: 12px 4px 12px 12px;
+  padding: 12px;
   background: #0b141a;
   overflow-y: auto;
   overflow-x: hidden;
@@ -769,13 +769,14 @@ body[data-route-mode="whatsapp"] .thread-messages {
   gap: 8px;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 body[data-route-mode="whatsapp"] .thread-bubble {
   border-color: #2a3942;
   background: #1f2c34;
   width: fit-content;
-  max-width: min(82%, 740px);
+  max-width: min(82%, calc(100% - 12px));
   padding: 8px 10px;
 }
 
