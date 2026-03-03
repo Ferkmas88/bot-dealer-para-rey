@@ -57,6 +57,10 @@ function formatSessionLabel(sessionId) {
   return sessionId;
 }
 
+function normalizePhoneDigits(value) {
+  return String(value || "").replace(/\D/g, "");
+}
+
 function formatTimestamp(value) {
   if (!value) return "-";
   const date = new Date(value);
@@ -217,12 +221,9 @@ export default function App() {
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [messagesError, setMessagesError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
-  const [newContactPhone, setNewContactPhone] = useState("");
-  const [newContactName, setNewContactName] = useState("");
-  const [newContactProvider, setNewContactProvider] = useState("twilio");
-  const [createContactLoading, setCreateContactLoading] = useState(false);
-  const [createContactError, setCreateContactError] = useState("");
-  const [createContactSuccess, setCreateContactSuccess] = useState("");
+  const [contactPickerLoading, setContactPickerLoading] = useState(false);
+  const [contactPickerError, setContactPickerError] = useState("");
+  const [contactPickerSuccess, setContactPickerSuccess] = useState("");
   const [manualReplyText, setManualReplyText] = useState("");
   const [manualReplyError, setManualReplyError] = useState("");
   const [manualReplySuccess, setManualReplySuccess] = useState("");
@@ -238,6 +239,8 @@ export default function App() {
     "Notification" in window &&
     "serviceWorker" in navigator &&
     "PushManager" in window;
+  const contactPickerSupported =
+    typeof window !== "undefined" && "contacts" in navigator && "ContactsManager" in window;
 
   const kpis = useMemo(() => {
     const total = inventoryRows.length;
@@ -1009,43 +1012,58 @@ export default function App() {
     }
   }
 
-  async function createWhatsappContact(e) {
-    e.preventDefault();
-    if (createContactLoading) return;
-    const phone = String(newContactPhone || "").trim();
-    const name = String(newContactName || "").trim();
-    if (!phone) {
-      setCreateContactError("Escribe un telefono.");
+  async function pickPhoneContact() {
+    if (contactPickerLoading) return;
+    setContactPickerError("");
+    setContactPickerSuccess("");
+
+    if (!contactPickerSupported) {
+      setContactPickerError("Este navegador no permite leer contactos del telefono.");
       return;
     }
 
-    setCreateContactLoading(true);
-    setCreateContactError("");
-    setCreateContactSuccess("");
+    setContactPickerLoading(true);
     try {
-      const res = await fetch(`${CONVERSATIONS_API_URL}/create-contact`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          phone,
-          name,
-          provider: newContactProvider
-        })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "No se pudo crear contacto");
+      const picked = await navigator.contacts.select(["name", "tel"], { multiple: false });
+      if (!Array.isArray(picked) || !picked.length) {
+        setContactPickerSuccess("No seleccionaste contacto.");
+        return;
+      }
+      const contact = picked[0] || {};
+      const contactName = String(contact?.name?.[0] || "").trim();
+      const contactTel = String(contact?.tel?.[0] || "").trim();
+      const contactDigits = normalizePhoneDigits(contactTel);
+      if (!contactDigits) {
+        setContactPickerError("El contacto seleccionado no tiene telefono.");
+        return;
+      }
 
-      setNewContactPhone("");
-      setNewContactName("");
-      setCreateContactSuccess("Contacto agregado.");
-      await loadConversations({ keepSelection: false });
-      if (data?.session_id) {
-        await handleSelectConversation(data.session_id);
+      const match = conversationRows.find((row) => {
+        const sessionDigits = normalizePhoneDigits(row?.session_id || "");
+        const leadDigits = normalizePhoneDigits(row?.lead_phone || "");
+        return (
+          sessionDigits.includes(contactDigits) ||
+          contactDigits.includes(sessionDigits) ||
+          leadDigits.includes(contactDigits) ||
+          contactDigits.includes(leadDigits)
+        );
+      });
+
+      setSearchQuery(contactName || contactTel || contactDigits);
+      if (match?.session_id) {
+        await handleSelectConversation(match.session_id);
+        setContactPickerSuccess(`Abri chat de ${contactName || contactTel}.`);
+      } else {
+        setContactPickerError("Ese contacto aun no tiene chat en WhatsApp.");
       }
     } catch (error) {
-      setCreateContactError(error?.message || "No se pudo crear contacto.");
+      if (String(error?.name || "") === "AbortError") {
+        setContactPickerSuccess("Seleccion de contacto cancelada.");
+      } else {
+        setContactPickerError("No pude abrir contactos del telefono.");
+      }
     } finally {
-      setCreateContactLoading(false);
+      setContactPickerLoading(false);
     }
   }
 
@@ -1499,27 +1517,16 @@ export default function App() {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
-                <form className="thread-add-contact" onSubmit={createWhatsappContact}>
-                  <input
-                    placeholder="Telefono (+1502...)"
-                    value={newContactPhone}
-                    onChange={(e) => setNewContactPhone(e.target.value)}
-                  />
-                  <input
-                    placeholder="Nombre (opcional)"
-                    value={newContactName}
-                    onChange={(e) => setNewContactName(e.target.value)}
-                  />
-                  <select value={newContactProvider} onChange={(e) => setNewContactProvider(e.target.value)}>
-                    <option value="twilio">Twilio</option>
-                    <option value="meta">Meta</option>
-                  </select>
-                  <button type="submit" className="secondary-btn" disabled={createContactLoading}>
-                    {createContactLoading ? "Agregando..." : "Agregar contacto"}
-                  </button>
-                </form>
-                {createContactError ? <p className="error-text">{createContactError}</p> : null}
-                {createContactSuccess ? <p className="subtle">{createContactSuccess}</p> : null}
+                <button
+                  type="button"
+                  className="secondary-btn thread-contact-picker-btn"
+                  onClick={pickPhoneContact}
+                  disabled={contactPickerLoading}
+                >
+                  {contactPickerLoading ? "Abriendo contactos..." : "Buscar en contactos del telefono"}
+                </button>
+                {contactPickerError ? <p className="error-text">{contactPickerError}</p> : null}
+                {contactPickerSuccess ? <p className="subtle">{contactPickerSuccess}</p> : null}
                 {conversationsError ? <p className="error-text">{conversationsError}</p> : null}
                 <div className="thread-scroll">
                   {conversationRows.map((row) => (
