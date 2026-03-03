@@ -110,10 +110,34 @@ function isCancelAction(text) {
   return /^(cancelar|cancela|cancel|no puedo|no podre|can'?t make it|cannot make it)\b/i.test(text);
 }
 
+function extractLooseCustomerName(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return null;
+  if (/\d/.test(raw)) return null;
+  if (/[!?.,:;/$]/.test(raw)) return null;
+  const lower = raw.toLowerCase();
+  if (
+    /^(hola|hello|hi|ok|okay|si|yes|no|quiero|cita|agendar|agenda|hoy|manana|mañana|confirmar|reprogramar|cancelar)$/.test(
+      lower
+    )
+  ) {
+    return null;
+  }
+  const tokens = raw.split(/\s+/).filter(Boolean);
+  if (!tokens.length || tokens.length > 3) return null;
+  if (!tokens.every((token) => /^[a-zA-ZÀ-ÿ' -]{2,20}$/.test(token))) return null;
+  return raw;
+}
+
+function asksOwnAppointment(text) {
+  return /(mi cita|tengo cita|ya tengo cita|cuando es mi cita|hora de mi cita|appointment)/i.test(text || "");
+}
+
 async function handleAppointmentFlow({ sessionId, incomingText }) {
   const text = String(incomingText || "").trim().toLowerCase();
   const openAppt = await getLatestOpenAppointmentForLead(sessionId);
   const requestedAt = parseRequestedDateTime(text);
+  const providedName = extractLooseCustomerName(incomingText);
 
   if (openAppt && isCancelAction(text)) {
     await updateAppointment(openAppt.id, {
@@ -183,6 +207,27 @@ async function handleAppointmentFlow({ sessionId, incomingText }) {
     return { handled: true, reply: "Perfecto, cita confirmada. Te esperamos. Si necesitas cambiar horario, responde 2." };
   }
 
+  if (openAppt && providedName) {
+    await upsertLeadProfile({
+      sessionId,
+      name: providedName,
+      lastMessageAt: new Date().toISOString()
+    });
+    if (openAppt.confirmation_state === "AWAITING_CONFIRMATION") {
+      return {
+        handled: true,
+        reply: `Perfecto, ${providedName}. Ya tengo tu nombre.\nPara confirmar tu cita de ${formatOptionLine(openAppt.scheduled_at)}, responde 1 confirmar.`
+      };
+    }
+    if (openAppt.confirmation_state === "PROPOSED") {
+      const options = Array.isArray(openAppt.proposal_options) ? openAppt.proposal_options : [];
+      return {
+        handled: true,
+        reply: `Gracias, ${providedName}. Ahora dime para cuando quieres la cita (ejemplo: hoy 4pm), o elige:\n1) ${formatOptionLine(options[0] || openAppt.scheduled_at)}\n2) ${formatOptionLine(options[1] || openAppt.scheduled_at)}`
+      };
+    }
+  }
+
   if (openAppt && (isRescheduleAction(text) || isTwoChoice(text))) {
     const options = buildNextAppointmentOptions();
     await updateAppointment(openAppt.id, {
@@ -203,26 +248,34 @@ async function handleAppointmentFlow({ sessionId, incomingText }) {
     };
   }
 
+  if (openAppt && asksOwnAppointment(text)) {
+    const status = String(openAppt.status || "PENDING").toUpperCase();
+    return {
+      handled: true,
+      reply: `Si, tienes una cita ${status} para ${formatOptionLine(openAppt.scheduled_at)}. Si quieres cambiarla, responde reprogramar.`
+    };
+  }
+
   if (/agendar|cita|appointment|test drive|visita/i.test(text) && !openAppt) {
+    if (!requestedAt) {
+      return {
+        handled: true,
+        reply: "Claro. Para cuando quieres la cita? Dime dia y hora (por ejemplo: hoy 4pm o manana 11am)."
+      };
+    }
     const options = buildNextAppointmentOptions();
-    const initialAt = requestedAt || options[0];
+    const initialAt = requestedAt;
     await createAppointment({
       lead_session_id: sessionId,
       scheduled_at: initialAt,
       status: "PENDING",
-      confirmation_state: requestedAt ? "AWAITING_CONFIRMATION" : "PROPOSED",
+      confirmation_state: "AWAITING_CONFIRMATION",
       proposal_options: options
     });
     await updateLeadStatus(sessionId, "APPT_PENDING");
-    if (requestedAt) {
-      return {
-        handled: true,
-        reply: `Perfecto, si tengo disponibilidad para ${formatOptionLine(requestedAt)}.\nResumen de tu cita:\nFecha/Hora: ${formatOptionLine(requestedAt)}\nResponde:\n1 confirmar\n2 cambiar`
-      };
-    }
     return {
       handled: true,
-      reply: `Te propongo:\n1) ${formatOptionLine(options[0])}\n2) ${formatOptionLine(options[1])}\nElige una opcion y luego te envio confirmacion final.`
+      reply: `Perfecto, si tengo disponibilidad para ${formatOptionLine(requestedAt)}.\nResumen de tu cita:\nFecha/Hora: ${formatOptionLine(requestedAt)}\nResponde:\n1 confirmar\n2 cambiar`
     };
   }
 
