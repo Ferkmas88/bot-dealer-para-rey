@@ -655,6 +655,8 @@ body[data-route-mode="whatsapp"] .thread-chat {
   padding: 0;
   min-height: 0;
   height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 body[data-route-mode="whatsapp"] .thread-chat-head {
@@ -667,23 +669,39 @@ body[data-route-mode="whatsapp"] .thread-chat-head {
 }
 
 body[data-route-mode="whatsapp"] .thread-messages {
-  flex: 1;
   max-height: none;
   margin-top: 0;
   padding: 12px;
   background: #0b141a;
   overflow: auto;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 body[data-route-mode="whatsapp"] .thread-bubble {
   border-color: #2a3942;
   background: #1f2c34;
+  width: fit-content;
+  max-width: min(82%, 740px);
+  padding: 8px 10px;
 }
 
 body[data-route-mode="whatsapp"] .thread-bubble.assistant {
   border-color: #005c4b;
   background: #005c4b;
+  margin-left: auto;
+  text-align: left;
+}
+
+body[data-route-mode="whatsapp"] .thread-bubble.user {
+  margin-right: auto;
+}
+
+body[data-route-mode="whatsapp"] .thread-bubble p {
+  margin-top: 4px;
+  word-break: break-word;
 }
 
 body[data-route-mode="whatsapp"] .manual-reply {
@@ -697,6 +715,10 @@ body[data-route-mode="whatsapp"] .thread-scroll {
   flex: 1;
   min-height: 0;
   overflow: auto;
+}
+
+body[data-route-mode="whatsapp"] .thread-chat-head .subtle {
+  margin: 2px 0 0;
 }
 
 @media (max-width: 860px) {
