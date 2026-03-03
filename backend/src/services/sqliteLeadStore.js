@@ -1136,6 +1136,8 @@ export async function upsertLeadProfile({
   assignedTo = null,
   priority = "NORMAL",
   mode = "BOT",
+  datePref = null,
+  date_pref = null,
   lastMessageAt = null
 } = {}) {
   if (!sessionId) return null;
@@ -1153,7 +1155,7 @@ export async function upsertLeadProfile({
     mode: String(mode ?? existing?.mode ?? "BOT").toUpperCase(),
     model: existing?.model ?? null,
     budget: existing?.budget ?? null,
-    date_pref: existing?.date_pref ?? null,
+    date_pref: datePref ?? date_pref ?? existing?.date_pref ?? null,
     email: existing?.email ?? null,
     phone: phone ?? existing?.phone ?? null,
     last_intent: intent ?? existing?.last_intent ?? null,
@@ -1330,7 +1332,7 @@ export async function createAppointment({
   vehicleId = null,
   vehicle_id = null,
   status = "PENDING",
-  confirmationState = "PROPOSED",
+  confirmationState = null,
   confirmation_state,
   proposalOptions = [],
   proposal_options,

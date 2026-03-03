@@ -32,6 +32,7 @@ const FIRST_CONTACT_MESSAGE =
   "502-576-8116 | 502-780-1096\n\n" +
   "Dime que estas buscando (SUV, sedan o pickup) y cuanto tienes para down, y empezamos ahora mismo.\n\n" +
   "Si prefieres atencion directa, te conecto con el equipo ahora mismo.";
+const DEALER_ADDRESS_TEXT = "3510 Dixie Hwy, Louisville, KY 40216";
 const inboundMessageCache = new Map();
 const INBOUND_DEDUP_TTL_MS = 10 * 60 * 1000;
 
@@ -122,6 +123,12 @@ function requestsHuman(text) {
   );
 }
 
+function asksAddress(text) {
+  return /(direccion|direcci[oó]n|ubicacion|ubicaci[oó]n|donde estan|d[oó]nde est[aá]n|address|location|mapa|maps)/i.test(
+    String(text || "")
+  );
+}
+
 function buildNextAppointmentOptions() {
   const now = new Date();
   const option1 = new Date(now.getTime() + 24 * 60 * 60 * 1000);
@@ -167,19 +174,12 @@ function formatOptionLine(value) {
 function parseRequestedDateTime(text) {
   const raw = String(text || "").toLowerCase();
   const dayOffset = /manana|mañana|tomorrow/.test(raw) ? 1 : /hoy|today/.test(raw) ? 0 : null;
-  const timeMatch = raw.match(/\b([0-1]?\d)(?::([0-5]\d))?\s*(am|pm)\b/);
-  if (dayOffset === null || !timeMatch) return null;
-
-  const hour12 = Number(timeMatch[1]);
-  if (!Number.isFinite(hour12) || hour12 < 1 || hour12 > 12) return null;
-  const minute = Number(timeMatch[2] || "0");
-  const meridiem = timeMatch[3];
-  let hour24 = hour12 % 12;
-  if (meridiem === "pm") hour24 += 12;
+  const parsedTime = parseRequestedTime(raw);
+  if (dayOffset === null || !parsedTime) return null;
 
   const date = new Date();
   date.setDate(date.getDate() + dayOffset);
-  date.setHours(hour24, minute, 0, 0);
+  date.setHours(parsedTime.hour24, parsedTime.minute, 0, 0);
   return date.toISOString();
 }
 
@@ -193,13 +193,36 @@ function parseRequestedDay(text) {
 function parseRequestedTime(text) {
   const raw = String(text || "").toLowerCase();
   const timeMatch = raw.match(/\b([0-1]?\d)(?::([0-5]\d))?\s*(am|pm)\b/);
-  if (!timeMatch) return null;
-  const hour12 = Number(timeMatch[1]);
-  if (!Number.isFinite(hour12) || hour12 < 1 || hour12 > 12) return null;
-  const minute = Number(timeMatch[2] || "0");
-  const meridiem = timeMatch[3];
-  let hour24 = hour12 % 12;
-  if (meridiem === "pm") hour24 += 12;
+  if (timeMatch) {
+    const hour12 = Number(timeMatch[1]);
+    if (!Number.isFinite(hour12) || hour12 < 1 || hour12 > 12) return null;
+    const minute = Number(timeMatch[2] || "0");
+    const meridiem = timeMatch[3];
+    let hour24 = hour12 % 12;
+    if (meridiem === "pm") hour24 += 12;
+    return { hour24, minute };
+  }
+
+  // Soporta frases como "a las 4", "4:30", "16:00"
+  const fallback = raw.match(/(?:\ba\s*las\b|\blas\b|\b)([01]?\d|2[0-3])(?::([0-5]\d))?\b/);
+  if (!fallback) return null;
+  const hourRaw = Number(fallback[1]);
+  const minute = Number(fallback[2] || "0");
+  if (!Number.isFinite(hourRaw) || hourRaw < 0 || hourRaw > 23) return null;
+
+  let hour24 = hourRaw;
+  if (hourRaw >= 1 && hourRaw <= 12) {
+    if (/\b(pm|p\.m\.|tarde|noche)\b/.test(raw)) {
+      hour24 = hourRaw % 12 + 12;
+    } else if (/\b(am|a\.m\.|manana|mañana)\b/.test(raw)) {
+      hour24 = hourRaw % 12;
+    } else if (hourRaw >= 1 && hourRaw <= 7) {
+      hour24 = hourRaw + 12;
+    } else if (hourRaw === 12) {
+      hour24 = 12;
+    }
+  }
+
   return { hour24, minute };
 }
 
@@ -236,7 +259,12 @@ function extractLooseCustomerName(text) {
   if (!raw) return null;
   if (/\d/.test(raw)) return null;
   if (/[!?.,:;/$]/.test(raw)) return null;
-  const lower = raw.toLowerCase();
+  const normalized = raw
+    .replace(/^(soy|i am)\s+/i, "")
+    .replace(/^(me llamo|mi nombre es|my name is)\s+/i, "")
+    .trim();
+  if (!normalized) return null;
+  const lower = normalized.toLowerCase();
   if (
     /^(hola|hello|hi|ok|okay|si|yes|no|quiero|cita|agendar|agenda|hoy|manana|mañana|confirmar|reprogramar|cancelar)$/.test(
       lower
@@ -247,10 +275,10 @@ function extractLooseCustomerName(text) {
   if (/(quiero|cita|agendar|agenda|appointment|carro|auto|pickup|suv|sedan|hoy|manana|mañana|por la tarde)/i.test(lower)) {
     return null;
   }
-  const tokens = raw.split(/\s+/).filter(Boolean);
+  const tokens = normalized.split(/\s+/).filter(Boolean);
   if (!tokens.length || tokens.length > 3) return null;
   if (!tokens.every((token) => /^[a-zA-ZÀ-ÿ' -]{2,20}$/.test(token))) return null;
-  return raw;
+  return normalized;
 }
 
 function asksOwnAppointment(text) {
@@ -420,13 +448,8 @@ async function handleAppointmentFlow({ sessionId, incomingText, lead = null }) {
     };
   }
 
-  if (/agendar|cita|appointment|test drive|visita/i.test(text) && !openAppt) {
-    if (!requestedAt) {
-      return {
-        handled: true,
-        reply: "Claro. Para cuando quieres la cita? Dime dia y hora exacta (por ejemplo: hoy 4pm o manana 11am)."
-      };
-    }
+  // Si ya tenemos fecha/hora exacta, crea la cita aunque no repita la palabra "cita".
+  if (!openAppt && requestedAt) {
     const options = await buildAvailableAppointmentOptions();
     const initialAt = requestedAt;
     const slotAvailable = await isAppointmentSlotAvailable({
@@ -457,6 +480,31 @@ async function handleAppointmentFlow({ sessionId, incomingText, lead = null }) {
     return {
       handled: true,
       reply: `Perfecto, te agende para ${formatOptionLine(requestedAt)}.\nTelefono de contacto: ${lead?.phone || "compartemelo por favor"}.\nSi quieres cambiar el horario, dime reprogramar.`
+    };
+  }
+
+  if (/agendar|cita|appointment|test drive|visita/i.test(text) && !openAppt) {
+    return {
+      handled: true,
+      reply: "Claro. Para cuando quieres la cita? Dime dia y hora exacta (por ejemplo: hoy 4pm o manana 11am)."
+    };
+  }
+
+  if (!openAppt && providedName) {
+    await upsertLeadProfile({
+      sessionId,
+      name: providedName,
+      lastMessageAt: new Date().toISOString()
+    });
+    if (lead?.date_pref) {
+      return {
+        handled: true,
+        reply: `Perfecto, ${providedName}. Ya tengo tu nombre. Ahora dime la hora exacta para ${lead.date_pref} (ejemplo: 11am, 2pm o 4pm).`
+      };
+    }
+    return {
+      handled: true,
+      reply: `Perfecto, ${providedName}. Ahora dime dia y hora exacta para agendar tu cita (ejemplo: hoy 4pm o manana 11am).`
     };
   }
 
@@ -538,6 +586,24 @@ twilioWebhookRouter.post("/whatsapp", async (req, res) => {
       });
       const twiml = new twilio.twiml.MessagingResponse();
       twiml.message().body(greetingReply);
+      return res.type("text/xml").send(twiml.toString());
+    }
+
+    if (asksAddress(incomingText)) {
+      const addressReply = DEALER_ADDRESS_TEXT;
+      await persistIncomingUserMessage({
+        sessionId,
+        userMessage: incomingText,
+        source: "address-fastpath"
+      });
+      await persistOutgoingAssistantMessage({
+        sessionId,
+        assistantMessage: addressReply,
+        source: "address-fastpath",
+        intent: "location"
+      });
+      const twiml = new twilio.twiml.MessagingResponse();
+      twiml.message().body(addressReply);
       return res.type("text/xml").send(twiml.toString());
     }
 
