@@ -186,6 +186,7 @@ export default function App() {
   const [inboxUnreadMessages, setInboxUnreadMessages] = useState(0);
   const routeModeRef = useRef(resolveRouteModeFromPathname());
   const selectedSessionRef = useRef("");
+  const threadMessagesRef = useRef(null);
   const seenCountsRef = useRef(loadSeenCounts());
   const pushSupported =
     typeof window !== "undefined" &&
@@ -378,6 +379,14 @@ export default function App() {
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [isAuthenticated, activeView]);
+
+  useEffect(() => {
+    if (activeView !== "inbox") return;
+    if (routeMode !== "whatsapp") return;
+    const el = threadMessagesRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [selectedMessages.length, selectedSessionId, activeView, routeMode]);
 
   function handleLogin(e) {
     e.preventDefault();
@@ -788,7 +797,7 @@ export default function App() {
 
   if (!isAuthenticated) {
     return (
-      <main className="app">
+      <main className={`app ${routeMode === "whatsapp" ? "app-wsp" : ""}`}>
         <section className="auth-card">
           <p className="eyebrow">Empire Rey Console</p>
           <h1>Acceso privado</h1>
@@ -819,8 +828,8 @@ export default function App() {
   }
 
   return (
-    <main className="app">
-      <section className="crm-shell">
+    <main className={`app ${routeMode === "whatsapp" ? "app-wsp" : ""}`}>
+      <section className={`crm-shell ${routeMode === "whatsapp" ? "crm-shell-wsp" : ""}`}>
         <header className="topbar">
           <div className="brand-block">
             <img src="/2026-01-14.webp" alt="Empire Rey logo" className="brand-logo" />
@@ -989,7 +998,7 @@ export default function App() {
             </aside>
           </section>
         ) : (
-          <section className="panel inbox-shell">
+          <section className={`panel inbox-shell ${routeMode === "whatsapp" ? "inbox-shell-wsp" : ""}`}>
             <div className="inbox-layout">
               {!isMobile || mobileInboxPanel === "list" ? (
               <aside className="thread-list">
@@ -1054,7 +1063,7 @@ export default function App() {
                   ) : null}
                 </div>
                 {messagesError ? <p className="error-text">{messagesError}</p> : null}
-                <div className="thread-messages">
+                <div className="thread-messages" ref={threadMessagesRef}>
                   {selectedMessages.map((msg) => (
                     <article key={msg.id} className={`thread-bubble ${msg.role === "assistant" ? "assistant" : "user"}`}>
                       <div className="thread-bubble-top">

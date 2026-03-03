@@ -557,3 +557,162 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 }
+
+body[data-route-mode="whatsapp"] {
+  background: #0b141a;
+}
+
+body[data-route-mode="whatsapp"] .app.app-wsp {
+  min-height: 100dvh;
+  padding: 0;
+  display: block;
+}
+
+body[data-route-mode="whatsapp"] .crm-shell.crm-shell-wsp {
+  width: 100%;
+  max-width: none;
+  min-height: 100dvh;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  background: #111b21;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+body[data-route-mode="whatsapp"] .topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: #202c33;
+  border-bottom: 1px solid #2a3942;
+  padding: 10px 12px;
+}
+
+body[data-route-mode="whatsapp"] .brand-logo {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border-color: #2a3942;
+}
+
+body[data-route-mode="whatsapp"] .eyebrow {
+  color: #9db0bb;
+}
+
+body[data-route-mode="whatsapp"] .topbar h1 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+body[data-route-mode="whatsapp"] .topbar-actions {
+  flex-wrap: wrap;
+}
+
+body[data-route-mode="whatsapp"] .hint {
+  margin: 0;
+  padding: 8px 12px;
+}
+
+body[data-route-mode="whatsapp"] .panel.inbox-shell.inbox-shell-wsp {
+  margin-top: 0;
+  min-height: 0;
+  border: none;
+  border-radius: 0;
+  background: #111b21;
+  padding: 0;
+  flex: 1;
+}
+
+body[data-route-mode="whatsapp"] .inbox-layout {
+  height: calc(100dvh - 76px);
+  min-height: 0;
+  gap: 0;
+  grid-template-columns: 360px minmax(0, 1fr);
+}
+
+body[data-route-mode="whatsapp"] .thread-list {
+  border: none;
+  border-right: 1px solid #2a3942;
+  border-radius: 0;
+  background: #111b21;
+  padding: 10px;
+  min-height: 0;
+}
+
+body[data-route-mode="whatsapp"] .thread-chat {
+  border: none;
+  border-radius: 0;
+  background: #0b141a;
+  padding: 0;
+  min-height: 0;
+}
+
+body[data-route-mode="whatsapp"] .thread-chat-head {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: #202c33;
+  border-bottom: 1px solid #2a3942;
+  padding: 12px;
+}
+
+body[data-route-mode="whatsapp"] .thread-messages {
+  flex: 1;
+  max-height: none;
+  margin-top: 0;
+  padding: 12px;
+  background: #0b141a;
+}
+
+body[data-route-mode="whatsapp"] .thread-bubble {
+  border-color: #2a3942;
+  background: #1f2c34;
+}
+
+body[data-route-mode="whatsapp"] .thread-bubble.assistant {
+  border-color: #005c4b;
+  background: #005c4b;
+}
+
+body[data-route-mode="whatsapp"] .manual-reply {
+  margin: 0;
+  padding: 10px 12px 12px;
+  background: #202c33;
+  border-top: 1px solid #2a3942;
+}
+
+body[data-route-mode="whatsapp"] .thread-scroll {
+  min-height: 0;
+}
+
+@media (max-width: 860px) {
+  body[data-route-mode="whatsapp"] .topbar {
+    align-items: flex-start;
+  }
+
+  body[data-route-mode="whatsapp"] .inbox-layout {
+    grid-template-columns: 1fr;
+    height: calc(100dvh - 92px);
+  }
+
+  body[data-route-mode="whatsapp"] .thread-list,
+  body[data-route-mode="whatsapp"] .thread-chat {
+    min-height: 0;
+    height: 100%;
+  }
+
+  body[data-route-mode="whatsapp"] .thread-chat-head {
+    padding: 10px;
+  }
+
+  body[data-route-mode="whatsapp"] .thread-messages {
+    padding: 10px;
+  }
+
+  body[data-route-mode="whatsapp"] .manual-reply {
+    grid-template-columns: 1fr auto;
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
+  }
+}

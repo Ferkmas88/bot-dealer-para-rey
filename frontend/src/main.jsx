@@ -25,6 +25,10 @@ function setPwaHead(routeMode) {
 
   const appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
   if (appleTitle) appleTitle.setAttribute("content", title);
+
+  if (document?.body) {
+    document.body.setAttribute("data-route-mode", routeMode);
+  }
 }
 
 if (typeof window !== "undefined") {
