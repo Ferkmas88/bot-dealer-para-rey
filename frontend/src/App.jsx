@@ -24,16 +24,17 @@ const INBOX_BADGE_POLL_MS = 4000;
 const INBOX_LIST_POLL_MS = 3000;
 const INBOX_MESSAGES_POLL_MS = 2000;
 const OPENING_PROMO_MESSAGE =
-  "🚨 ¡QUÉ HUBO MI GENTE LINDA DE KENTUCKY! 🚨\n" +
-  "🚗 ¿Acabas de llegar al país? ¡Ya puedes tener tu carro!\n" +
-  "📞 Llámanos hoy mismo: Reyder Quevedo -📞 502 576 8116\n" +
-  "502 780 1096  LLAMA!¡!!!\n" +
-  "3510 dixie hwy 40216\n\n" +
-  "💥 TODAS LAS APLICACIONES SON APROBADAS 💥\n" +
-  "✅ ¿No tienes buen crédito? ¡APROBADO!\n" +
-  "✅ ¿Solo tienes tu ID? ¡APROBADO!\n" +
-  "✅ ¿Madre soltera? ¡Tenemos planes especiales para ti desde $85/semana!\n" +
-  "✅ ¿Tienes un carro viejo? ¡Lo recibimos como parte de pago!";
+  "Hola. Soy el asistente automatico de Empire Rey Auto Sales. Estoy aqui 24/7 para ayudarte.\n\n" +
+  "Puedo ayudarte a:\n\n" +
+  "- Buscar el carro que estas necesitando\n" +
+  "- Agendar tu cita en el dealer\n" +
+  "- Ponerte en contacto directo con Rey\n" +
+  "- Conectarte con nuestro mecanico para servicio o preguntas\n" +
+  "- Responder dudas sobre down payment, credito o requisitos\n\n" +
+  "3510 Dixie Hwy, Louisville, KY 40216\n" +
+  "502-576-8116 | 502-780-1096\n\n" +
+  "Dime que estas buscando (SUV, sedan o pickup) y cuanto tienes para down, y empezamos ahora mismo.\n\n" +
+  "Si prefieres atencion directa, te conecto con el equipo ahora mismo.";
 
 const EMPTY_FORM = {
   make: "",
@@ -1520,3 +1521,4 @@ export default function App() {
     </main>
   );
 }
+
