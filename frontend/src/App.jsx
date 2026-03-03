@@ -57,6 +57,12 @@ function formatSessionLabel(sessionId) {
   return sessionId;
 }
 
+function formatConversationDisplayName(row) {
+  const name = String(row?.lead_name || "").trim();
+  if (name) return name;
+  return formatSessionLabel(row?.session_id || "");
+}
+
 function normalizePhoneDigits(value) {
   return String(value || "").replace(/\D/g, "");
 }
@@ -1537,7 +1543,7 @@ export default function App() {
                       onClick={() => handleSelectConversation(row.session_id)}
                     >
                       <div className="thread-title">
-                        {formatSessionLabel(row.session_id)}
+                        {formatConversationDisplayName(row)}
                         {Number(row.unread_count || 0) > 0 ? (
                           <span className="thread-unread">{row.unread_count}</span>
                         ) : null}
@@ -1564,7 +1570,7 @@ export default function App() {
                       Volver
                     </button>
                   ) : null}
-                  <h2>{selectedThread ? formatSessionLabel(selectedThread.session_id) : "Selecciona un chat"}</h2>
+                  <h2>{selectedThread ? formatConversationDisplayName(selectedThread) : "Selecciona un chat"}</h2>
                   <p className="subtle">{selectedThread ? selectedThread.session_id : "Esperando seleccion..."}</p>
                   {selectedLead ? (
                     <p className="subtle">
