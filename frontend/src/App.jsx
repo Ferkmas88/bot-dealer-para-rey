@@ -380,13 +380,22 @@ export default function App() {
     };
   }, [isAuthenticated, activeView]);
 
+  function scrollThreadToBottom() {
+    const el = threadMessagesRef.current;
+    if (!el) return;
+    requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+      requestAnimationFrame(() => {
+        el.scrollTop = el.scrollHeight;
+      });
+    });
+  }
+
   useEffect(() => {
     if (activeView !== "inbox") return;
     if (routeMode !== "whatsapp") return;
-    const el = threadMessagesRef.current;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
-  }, [selectedMessages.length, selectedSessionId, activeView, routeMode]);
+    scrollThreadToBottom();
+  }, [selectedMessages, selectedSessionId, activeView, routeMode]);
 
   function handleLogin(e) {
     e.preventDefault();
@@ -622,6 +631,9 @@ export default function App() {
       if (mountedRef && !mountedRef()) return;
       setSelectedMessages(Array.isArray(data?.rows) ? data.rows : []);
       setSelectedSettings(data?.settings || { bot_enabled: 1, last_read_at: null });
+      if (routeMode === "whatsapp") {
+        scrollThreadToBottom();
+      }
     } catch {
       if (!mountedRef || mountedRef()) {
         setMessagesError("No pude cargar mensajes de este chat.");
