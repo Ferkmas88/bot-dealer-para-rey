@@ -490,6 +490,7 @@ twilioWebhookRouter.post("/whatsapp", async (req, res) => {
 
   const from = req.body.From || "unknown";
   const incomingText = req.body.Body || "";
+  const inboundProfileName = String(req.body.ProfileName || req.body.WaName || "").trim();
   const sessionId = `wa:${from}`;
   const inboundMessageId = req.body.MessageSid || "";
 
@@ -509,6 +510,7 @@ twilioWebhookRouter.post("/whatsapp", async (req, res) => {
     await upsertLeadProfile({
       sessionId,
       phone: from.replace(/^whatsapp:/, ""),
+      name: inboundProfileName || existingLead?.name || null,
       source: "whatsapp",
       language: detectLanguage(incomingText),
       intent: null,
