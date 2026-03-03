@@ -1,5 +1,6 @@
 import { findAppointmentsForReminder, getConsecutiveAssistantMessagesSinceLastUser, updateAppointment } from "./sqliteLeadStore.js";
 import { sendManualWhatsAppReply } from "./twilioSender.js";
+import { sendMetaWhatsAppText } from "./metaSender.js";
 import { persistOutgoingAssistantMessage } from "./sqliteLeadStore.js";
 
 function buildReminderMessage({ scheduledAt, minutesBefore }) {
@@ -13,7 +14,10 @@ function buildReminderMessage({ scheduledAt, minutesBefore }) {
 
 async function sendReminderForAppointment(appointment, minutesBefore) {
   const sessionId = appointment?.lead_session_id;
-  if (!sessionId || !String(sessionId).startsWith("wa:")) return { ok: false, skipped: true };
+  if (!sessionId) return { ok: false, skipped: true };
+  const isTwilio = String(sessionId).startsWith("wa:");
+  const isMeta = String(sessionId).startsWith("wa_meta:");
+  if (!isTwilio && !isMeta) return { ok: false, skipped: true };
   const assistantStreak = await getConsecutiveAssistantMessagesSinceLastUser(sessionId, { maxScan: 30 });
   if (assistantStreak >= 2) {
     if (minutesBefore <= 20) {
@@ -29,7 +33,11 @@ async function sendReminderForAppointment(appointment, minutesBefore) {
   }
   const message = buildReminderMessage({ scheduledAt: appointment.scheduled_at, minutesBefore });
 
-  await sendManualWhatsAppReply({ sessionId, body: message });
+  if (isMeta) {
+    await sendMetaWhatsAppText({ sessionId, text: message });
+  } else {
+    await sendManualWhatsAppReply({ sessionId, body: message });
+  }
   await persistOutgoingAssistantMessage({
     sessionId,
     assistantMessage: message,

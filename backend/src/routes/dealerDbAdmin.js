@@ -24,6 +24,7 @@ import {
   updateInventoryUnit
 } from "../services/sqliteLeadStore.js";
 import { sendManualWhatsAppReply } from "../services/twilioSender.js";
+import { sendMetaWhatsAppText } from "../services/metaSender.js";
 import { getPushPublicConfig, getPushRuntimeStatus, sendTestPush } from "../services/pushNotifications.js";
 import { sendAppointmentConfirmedOwnerEmail } from "../services/ownerNotifications.js";
 
@@ -270,7 +271,15 @@ dealerDbAdminRouter.post("/dealer/db/conversations/:sessionId/reply", async (req
   }
 
   try {
-    const twilioResponse = await sendManualWhatsAppReply({ sessionId, body });
+    let providerResponse = null;
+    if (sessionId.startsWith("wa_meta:")) {
+      providerResponse = await sendMetaWhatsAppText({ sessionId, text: body });
+    } else if (sessionId.startsWith("wa:")) {
+      providerResponse = await sendManualWhatsAppReply({ sessionId, body });
+    } else {
+      return res.status(400).json({ error: "Unsupported session type for manual reply" });
+    }
+
     await persistOutgoingAssistantMessage({
       sessionId,
       assistantMessage: body,
@@ -279,7 +288,7 @@ dealerDbAdminRouter.post("/dealer/db/conversations/:sessionId/reply", async (req
 
     return res.json({
       ok: true,
-      sid: twilioResponse?.sid || null
+      sid: providerResponse?.sid || providerResponse?.messages?.[0]?.id || null
     });
   } catch (error) {
     return res.status(500).json({
@@ -345,7 +354,9 @@ dealerDbAdminRouter.post("/dealer/db/conversations/:sessionId/appointment/action
       outboundText = "Cita cancelada. Cuando quieras reagendar, te ayudo con gusto.";
     }
 
-    if (sessionId.startsWith("wa:")) {
+    if (sessionId.startsWith("wa_meta:")) {
+      await sendMetaWhatsAppText({ sessionId, text: outboundText });
+    } else if (sessionId.startsWith("wa:")) {
       await sendManualWhatsAppReply({ sessionId, body: outboundText });
     }
     await persistOutgoingAssistantMessage({

@@ -506,6 +506,19 @@ button:hover {
   gap: 8px;
 }
 
+.quick-replies {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 2px;
+}
+
+.quick-reply-btn {
+  white-space: nowrap;
+}
+
 button:disabled {
   opacity: 0.7;
   cursor: not-allowed;

@@ -48,6 +48,14 @@ const EMPTY_FORM = {
   featured: 0
 };
 
+const QUICK_REPLY_TEMPLATES = [
+  { label: "Estoy aqui", text: "Estoy aqui para ayudarte ahora mismo. Que auto te interesa?" },
+  { label: "Ubicacion", text: "Estamos en 3510 Dixie Hwy, Louisville, KY 40216. Quieres venir hoy?" },
+  { label: "Pedir nombre", text: "Perfecto. Me compartes tu nombre completo para agendarte?" },
+  { label: "Pedir down", text: "Que down payment aproximado tienes hoy? Asi te doy opciones reales." },
+  { label: "Pasar humano", text: "Te paso con un asesor humano ahora mismo. En breve te escribimos." }
+];
+
 function formatSessionLabel(sessionId) {
   if (!sessionId) return "Sin session";
   if (sessionId.startsWith("wa:whatsapp:")) return sessionId.replace("wa:whatsapp:", "");
@@ -932,12 +940,16 @@ export default function App() {
 
   async function sendManualReply(e) {
     e.preventDefault();
+    await sendManualReplyMessage(manualReplyText);
+  }
+
+  async function sendManualReplyMessage(rawMessage) {
     if (!selectedSessionId || manualSending) return;
-    if (!selectedSessionId.startsWith("wa:")) {
-      setManualReplyError("Respuesta manual disponible solo para chats Twilio (wa:).");
+    if (!selectedSessionId.startsWith("wa:") && !selectedSessionId.startsWith("wa_meta:")) {
+      setManualReplyError("Respuesta manual disponible solo para chats WhatsApp.");
       return;
     }
-    const message = manualReplyText.trim();
+    const message = String(rawMessage || "").trim();
     if (!message) return;
 
     setManualReplyError("");
@@ -1486,21 +1498,34 @@ export default function App() {
                   ) : null}
                 </div>
                 <form className="manual-reply" onSubmit={sendManualReply}>
+                  <div className="quick-replies">
+                    {QUICK_REPLY_TEMPLATES.map((item) => (
+                      <button
+                        key={item.label}
+                        type="button"
+                        className="secondary-btn quick-reply-btn"
+                        onClick={() => sendManualReplyMessage(item.text)}
+                        disabled={!selectedSessionId || manualSending || (!selectedSessionId.startsWith("wa:") && !selectedSessionId.startsWith("wa_meta:"))}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
                   <input
                     placeholder={
                       !selectedSessionId
                         ? "Selecciona un chat para responder"
-                        : selectedSessionId.startsWith("wa:")
+                        : selectedSessionId.startsWith("wa:") || selectedSessionId.startsWith("wa_meta:")
                           ? "Responder manualmente..."
-                          : "Solo chats Twilio permiten respuesta manual"
+                          : "Solo chats WhatsApp permiten respuesta manual"
                     }
                     value={manualReplyText}
                     onChange={(e) => setManualReplyText(e.target.value)}
-                    disabled={!selectedSessionId || manualSending || !selectedSessionId.startsWith("wa:")}
+                    disabled={!selectedSessionId || manualSending || (!selectedSessionId.startsWith("wa:") && !selectedSessionId.startsWith("wa_meta:"))}
                   />
                   <button
                     type="submit"
-                    disabled={!selectedSessionId || manualSending || !manualReplyText.trim() || !selectedSessionId.startsWith("wa:")}
+                    disabled={!selectedSessionId || manualSending || !manualReplyText.trim() || (!selectedSessionId.startsWith("wa:") && !selectedSessionId.startsWith("wa_meta:"))}
                   >
                     {manualSending ? "Enviando..." : "Enviar manual"}
                   </button>
