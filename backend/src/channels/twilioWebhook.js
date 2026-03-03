@@ -19,6 +19,18 @@ import { sendAppointmentConfirmedOwnerEmail, sendHotLeadHandoffOwnerEmail } from
 export const twilioWebhookRouter = express.Router();
 const cadenceBySession = new Map();
 const BOT_HELPER_PREFIX = "Soy el bot asistente de Empire Rey y te estoy ayudando 24/7.";
+const FIRST_CONTACT_MESSAGE =
+  "Hola. Soy el asistente automatico de Empire Rey Auto Sales. Estoy aqui 24/7 para ayudarte.\n\n" +
+  "Puedo ayudarte a:\n" +
+  "- Buscar el carro que estas necesitando\n" +
+  "- Agendar tu cita en el dealer\n" +
+  "- Ponerte en contacto directo con Rey\n" +
+  "- Conectarte con nuestro mecanico para servicio o preguntas\n" +
+  "- Responder dudas sobre down payment, credito o requisitos\n\n" +
+  "3510 Dixie Hwy, Louisville, KY 40216\n" +
+  "502-576-8116 | 502-780-1096\n\n" +
+  "Dime que estas buscando (SUV, sedan o pickup) y cuanto tienes para down, y empezamos ahora mismo.\n\n" +
+  "Si prefieres atencion directa, te conecto con el equipo ahora mismo.";
 const inboundMessageCache = new Map();
 const INBOUND_DEDUP_TTL_MS = 10 * 60 * 1000;
 
@@ -390,7 +402,7 @@ twilioWebhookRouter.post("/whatsapp", async (req, res) => {
     );
 
     if (!existingLead) {
-      aiResult.reply = `Hola, soy tu asistente virtual 24/7. Si prefieres asesor humano, escribe HUMANO.\n\n${aiResult.reply}`;
+      aiResult.reply = `${FIRST_CONTACT_MESSAGE}\n\n${aiResult.reply}`;
     }
 
     await saveDealerTurn({
