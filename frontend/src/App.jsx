@@ -116,8 +116,19 @@ function urlBase64ToUint8Array(base64String) {
 function resolveAdminViewFromPathname() {
   if (typeof window === "undefined") return "crm";
   const path = window.location.pathname.toLowerCase().replace(/\/+$/, "") || "/";
-  if (path === "/admin/whatsapp" || path === "/admin/whatpp") return "inbox";
+  if (path === "/admin/whatsapp" || path === "/admin/whatpp" || path === "/wsp") return "inbox";
   return "crm";
+}
+
+function resolveRouteModeFromPathname() {
+  if (typeof window === "undefined") return "admin";
+  const path = window.location.pathname.toLowerCase().replace(/\/+$/, "") || "/";
+  if (path === "/admin/whatsapp" || path === "/admin/whatpp" || path === "/wsp") return "whatsapp";
+  return "admin";
+}
+
+function defaultViewForRouteMode(routeMode) {
+  return routeMode === "whatsapp" ? "inbox" : "crm";
 }
 
 export default function App() {
@@ -132,6 +143,7 @@ export default function App() {
   const [rememberMe, setRememberMe] = useState(true);
   const [passwordInput, setPasswordInput] = useState("");
   const [authError, setAuthError] = useState("");
+  const [routeMode] = useState(resolveRouteModeFromPathname);
   const [activeView, setActiveView] = useState(resolveAdminViewFromPathname);
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushStatus, setPushStatus] = useState("");
@@ -172,7 +184,7 @@ export default function App() {
   const [manualSending, setManualSending] = useState(false);
   const [botUpdating, setBotUpdating] = useState(false);
   const [inboxUnreadMessages, setInboxUnreadMessages] = useState(0);
-  const routeViewRef = useRef(resolveAdminViewFromPathname());
+  const routeModeRef = useRef(resolveRouteModeFromPathname());
   const selectedSessionRef = useRef("");
   const seenCountsRef = useRef(loadSeenCounts());
   const pushSupported =
@@ -202,6 +214,10 @@ export default function App() {
   useEffect(() => {
     selectedSessionRef.current = selectedSessionId;
   }, [selectedSessionId]);
+
+  useEffect(() => {
+    setActiveView(defaultViewForRouteMode(routeMode));
+  }, [routeMode]);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -378,7 +394,7 @@ export default function App() {
       setIsAuthenticated(true);
       setAuthError("");
       setPasswordInput("");
-      setActiveView(routeViewRef.current);
+      setActiveView(defaultViewForRouteMode(routeModeRef.current));
       return;
     }
     setAuthError("Contrasena incorrecta.");
@@ -814,33 +830,28 @@ export default function App() {
             </div>
           </div>
           <div className="topbar-actions">
-            <button
-              type="button"
-              className={activeView === "crm" ? "active-btn" : "secondary-btn"}
-              onClick={() => {
-                setActiveView("crm");
-                if (typeof window !== "undefined") {
-                  window.history.replaceState({}, "", "/admin");
-                  routeViewRef.current = "crm";
-                }
-              }}
-            >
-              Inventario
-            </button>
-            <button
-              type="button"
-              className={activeView === "inbox" ? "active-btn" : "secondary-btn"}
-              onClick={() => {
-                setActiveView("inbox");
-                if (typeof window !== "undefined") {
-                  window.history.replaceState({}, "", "/admin/whatsapp");
-                  routeViewRef.current = "inbox";
-                }
-              }}
-            >
-              Inbox WhatsApp ({activeView === "inbox" ? unreadTotal : inboxUnreadMessages})
-            </button>
-            {activeView === "crm" ? (
+            {routeMode === "admin" ? (
+              <button
+                type="button"
+                className="secondary-btn"
+                onClick={() => {
+                  window.location.href = "/wsp";
+                }}
+              >
+                Abrir WhatsApp ({inboxUnreadMessages})
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="secondary-btn"
+                onClick={() => {
+                  window.location.href = "/admin";
+                }}
+              >
+                Abrir Inventario
+              </button>
+            )}
+            {routeMode === "admin" ? (
               <button type="button" className="secondary-btn" onClick={loadInventory} disabled={inventoryLoading}>
                 {inventoryLoading ? "Cargando..." : "Sincronizar"}
               </button>
@@ -872,7 +883,7 @@ export default function App() {
         </header>
         {pushStatus ? <p className="hint">{pushStatus}</p> : null}
 
-        {activeView === "crm" ? (
+        {routeMode === "admin" ? (
           <section className="crm-layout">
             <section className="crm-main">
               <section className="kpi-grid">
