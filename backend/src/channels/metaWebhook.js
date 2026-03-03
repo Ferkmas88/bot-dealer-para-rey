@@ -5,6 +5,7 @@ import {
   createAppointment,
   getConversationSettings,
   getLeadBySessionId,
+  hasWelcomeMessageSent,
   getLatestOpenAppointmentForLead,
   persistIncomingUserMessage,
   persistOutgoingAssistantMessage,
@@ -328,6 +329,10 @@ metaWebhookRouter.post("/whatsapp", async (req, res) => {
       });
 
       if (isGreetingOnlyMessage(msg.body)) {
+        const welcomeAlreadySent = await hasWelcomeMessageSent(sessionId);
+        const greetingReply = welcomeAlreadySent
+          ? `${BOT_HELPER_PREFIX}\nHola. Dime que buscas (SUV, sedan o pickup) y tu down payment, y te ayudo ahora mismo.`
+          : FIRST_CONTACT_MESSAGE;
         await persistIncomingUserMessage({
           sessionId,
           userMessage: msg.body,
@@ -335,11 +340,11 @@ metaWebhookRouter.post("/whatsapp", async (req, res) => {
         });
         await sendWhatsAppText({
           to: msg.from,
-          text: FIRST_CONTACT_MESSAGE
+          text: greetingReply
         });
         await persistOutgoingAssistantMessage({
           sessionId,
-          assistantMessage: FIRST_CONTACT_MESSAGE,
+          assistantMessage: greetingReply,
           source: "greeting-fastpath",
           intent: "welcome"
         });

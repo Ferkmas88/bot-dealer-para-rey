@@ -6,6 +6,7 @@ import {
   createAppointment,
   getConversationSettings,
   getLeadBySessionId,
+  hasWelcomeMessageSent,
   getLatestOpenAppointmentForLead,
   persistIncomingUserMessage,
   persistOutgoingAssistantMessage,
@@ -307,6 +308,10 @@ twilioWebhookRouter.post("/whatsapp", async (req, res) => {
     });
 
     if (isGreetingOnlyMessage(incomingText)) {
+      const welcomeAlreadySent = await hasWelcomeMessageSent(sessionId);
+      const greetingReply = welcomeAlreadySent
+        ? `${BOT_HELPER_PREFIX}\nHola. Dime que buscas (SUV, sedan o pickup) y tu down payment, y te ayudo ahora mismo.`
+        : FIRST_CONTACT_MESSAGE;
       await persistIncomingUserMessage({
         sessionId,
         userMessage: incomingText,
@@ -314,12 +319,12 @@ twilioWebhookRouter.post("/whatsapp", async (req, res) => {
       });
       await persistOutgoingAssistantMessage({
         sessionId,
-        assistantMessage: FIRST_CONTACT_MESSAGE,
+        assistantMessage: greetingReply,
         source: "greeting-fastpath",
         intent: "welcome"
       });
       const twiml = new twilio.twiml.MessagingResponse();
-      twiml.message().body(FIRST_CONTACT_MESSAGE);
+      twiml.message().body(greetingReply);
       return res.type("text/xml").send(twiml.toString());
     }
 

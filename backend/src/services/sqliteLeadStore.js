@@ -996,6 +996,41 @@ export async function getConsecutiveAssistantMessagesSinceLastUser(sessionId, { 
   return streak;
 }
 
+export async function hasWelcomeMessageSent(sessionId) {
+  if (!sessionId) return false;
+
+  if (usePgInventory && pgPool) {
+    await pgMessagingReady;
+    const result = await pgPool.query(
+      `
+        SELECT 1
+        FROM messages
+        WHERE session_id = $1
+          AND role = 'assistant'
+          AND (source = 'greeting-fastpath' OR intent = 'welcome')
+        LIMIT 1
+      `,
+      [sessionId]
+    );
+    return Boolean(result.rows?.length);
+  }
+
+  const row = db
+    .prepare(
+      `
+      SELECT 1
+      FROM messages
+      WHERE session_id = ?
+        AND role = 'assistant'
+        AND (source = 'greeting-fastpath' OR intent = 'welcome')
+      LIMIT 1
+      `
+    )
+    .get(sessionId);
+
+  return Boolean(row);
+}
+
 export async function listDealerMessagesBySession(sessionId, { limit = 500 } = {}) {
   const safeLimit = Number.isFinite(Number(limit)) ? Math.max(1, Math.min(2000, Number(limit))) : 500;
 
