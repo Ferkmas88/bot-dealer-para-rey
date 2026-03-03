@@ -850,7 +850,7 @@ export default function App() {
               <h1>Centro de Operaciones</h1>
             </div>
           </div>
-          <div className="topbar-actions">
+          <div className={`topbar-actions ${routeMode === "whatsapp" ? "topbar-actions-wsp" : ""}`}>
             {routeMode === "admin" ? (
               <button
                 type="button"

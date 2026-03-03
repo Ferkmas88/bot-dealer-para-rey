@@ -26,6 +26,7 @@ body {
   margin: 0;
   color: var(--ink);
   font-family: "Segoe UI", "Trebuchet MS", sans-serif;
+  overflow-x: hidden;
   background:
     radial-gradient(circle at 7% 10%, #7e561a30, transparent 34%),
     radial-gradient(circle at 88% 92%, #8a171720, transparent 30%),
@@ -375,7 +376,8 @@ button:hover {
 }
 
 .thread-scroll {
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   display: grid;
   gap: 8px;
 }
@@ -466,7 +468,8 @@ button:hover {
 
 .thread-messages {
   margin-top: 10px;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   display: grid;
   gap: 8px;
   max-height: 640px;
@@ -728,7 +731,8 @@ body[data-route-mode="whatsapp"] .thread-scroll {
   flex: 1;
   height: 100%;
   min-height: 0;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
 }
