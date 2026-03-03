@@ -33,6 +33,10 @@ app.use("/webhooks/twilio", twilioWebhookRouter);
 app.use("/webhooks/meta", metaWebhookRouter);
 app.use(express.static(frontendDistPath));
 
+app.get(["/admin", "/admin/whatsapp", "/admin/whatpp"], (_req, res) => {
+  return res.sendFile(path.join(frontendDistPath, "index.html"));
+});
+
 app.get("*", (req, res, next) => {
   if (
     req.path === "/health" ||

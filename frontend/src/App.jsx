@@ -18,6 +18,9 @@ const AUTH_STORAGE_KEY = "dealer-panel-auth";
 const AUTH_PERSIST_STORAGE_KEY = "dealer-panel-auth-persist-v1";
 const AUTH_PERSIST_TTL_MS = 1000 * 60 * 60 * 24 * 30;
 const INBOX_SEEN_STORAGE_KEY = "dealer-inbox-seen-counts-v1";
+const INBOX_BADGE_POLL_MS = 4000;
+const INBOX_LIST_POLL_MS = 3000;
+const INBOX_MESSAGES_POLL_MS = 2000;
 const OPENING_PROMO_MESSAGE =
   "🚨 ¡QUÉ HUBO MI GENTE LINDA DE KENTUCKY! 🚨\n" +
   "🚗 ¿Acabas de llegar al país? ¡Ya puedes tener tu carro!\n" +
@@ -110,6 +113,13 @@ function urlBase64ToUint8Array(base64String) {
   return outputArray;
 }
 
+function resolveAdminViewFromPathname() {
+  if (typeof window === "undefined") return "crm";
+  const path = window.location.pathname.toLowerCase().replace(/\/+$/, "") || "/";
+  if (path === "/admin/whatsapp" || path === "/admin/whatpp") return "inbox";
+  return "crm";
+}
+
 export default function App() {
   const [isMobile, setIsMobile] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -122,7 +132,7 @@ export default function App() {
   const [rememberMe, setRememberMe] = useState(true);
   const [passwordInput, setPasswordInput] = useState("");
   const [authError, setAuthError] = useState("");
-  const [activeView, setActiveView] = useState("inbox");
+  const [activeView, setActiveView] = useState(resolveAdminViewFromPathname);
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushStatus, setPushStatus] = useState("");
   const [notificationPermission, setNotificationPermission] = useState(() => {
@@ -162,6 +172,7 @@ export default function App() {
   const [manualSending, setManualSending] = useState(false);
   const [botUpdating, setBotUpdating] = useState(false);
   const [inboxUnreadMessages, setInboxUnreadMessages] = useState(0);
+  const routeViewRef = useRef(resolveAdminViewFromPathname());
   const selectedSessionRef = useRef("");
   const seenCountsRef = useRef(loadSeenCounts());
   const pushSupported =
@@ -281,7 +292,7 @@ export default function App() {
     };
 
     run();
-    const timer = setInterval(run, 10000);
+    const timer = setInterval(run, INBOX_BADGE_POLL_MS);
     return () => {
       isMounted = false;
       clearInterval(timer);
@@ -297,7 +308,7 @@ export default function App() {
     };
 
     run();
-    const timer = setInterval(run, 10000);
+    const timer = setInterval(run, INBOX_LIST_POLL_MS);
     return () => {
       isMounted = false;
       clearInterval(timer);
@@ -321,12 +332,36 @@ export default function App() {
     };
 
     run();
-    const timer = setInterval(run, 6000);
+    const timer = setInterval(run, INBOX_MESSAGES_POLL_MS);
     return () => {
       isMounted = false;
       clearInterval(timer);
     };
   }, [selectedSessionId, activeView]);
+
+  useEffect(() => {
+    if (!isAuthenticated || activeView !== "inbox") return undefined;
+    if (typeof window === "undefined") return undefined;
+
+    const refreshNow = () => {
+      loadConversations({ keepSelection: true });
+      if (selectedSessionRef.current) {
+        loadMessagesForSession(selectedSessionRef.current);
+      }
+    };
+
+    const onFocus = () => refreshNow();
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") refreshNow();
+    };
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [isAuthenticated, activeView]);
 
   function handleLogin(e) {
     e.preventDefault();
@@ -343,7 +378,7 @@ export default function App() {
       setIsAuthenticated(true);
       setAuthError("");
       setPasswordInput("");
-      setActiveView("inbox");
+      setActiveView(routeViewRef.current);
       return;
     }
     setAuthError("Contrasena incorrecta.");
@@ -782,14 +817,26 @@ export default function App() {
             <button
               type="button"
               className={activeView === "crm" ? "active-btn" : "secondary-btn"}
-              onClick={() => setActiveView("crm")}
+              onClick={() => {
+                setActiveView("crm");
+                if (typeof window !== "undefined") {
+                  window.history.replaceState({}, "", "/admin");
+                  routeViewRef.current = "crm";
+                }
+              }}
             >
               Inventario
             </button>
             <button
               type="button"
               className={activeView === "inbox" ? "active-btn" : "secondary-btn"}
-              onClick={() => setActiveView("inbox")}
+              onClick={() => {
+                setActiveView("inbox");
+                if (typeof window !== "undefined") {
+                  window.history.replaceState({}, "", "/admin/whatsapp");
+                  routeViewRef.current = "inbox";
+                }
+              }}
             >
               Inbox WhatsApp ({activeView === "inbox" ? unreadTotal : inboxUnreadMessages})
             </button>
