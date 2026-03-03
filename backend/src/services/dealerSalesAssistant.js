@@ -1167,8 +1167,7 @@ export async function processDealerSessionMessageWithLLM(message, context = {}, 
     const intent = "buying_interest";
     const baseContext = mergeContext(context, extracted, intent);
     const appointmentSlot = slotFromMessage ?? context?.appointmentSlot ?? null;
-    const looseNameFromMessage = context?.appointmentSlot ? extractLooseCustomerName(safeMessage) : null;
-    const customerName = nameFromMessage ?? looseNameFromMessage ?? context?.customerName ?? null;
+    const customerName = nameFromMessage ?? context?.customerName ?? null;
     const updatedContext = {
       ...baseContext,
       appointmentSlot,

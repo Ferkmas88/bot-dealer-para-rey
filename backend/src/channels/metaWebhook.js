@@ -130,7 +130,9 @@ function extractLooseCustomerName(text) {
 }
 
 function asksOwnAppointment(text) {
-  return /(mi cita|tengo cita|ya tengo cita|cuando es mi cita|hora de mi cita|appointment)/i.test(text || "");
+  return /(mi cita|tengo cita|ya tengo cita|cuando es mi cita|hora de mi cita|a que hora|qué hora|que hora|appointment)/i.test(
+    text || ""
+  );
 }
 
 async function handleAppointmentFlow({ sessionId, incomingText }) {
