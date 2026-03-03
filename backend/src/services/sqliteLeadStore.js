@@ -23,6 +23,14 @@ db.exec(`
 
   CREATE TABLE IF NOT EXISTS leads (
     session_id TEXT PRIMARY KEY,
+    name TEXT,
+    source TEXT,
+    language TEXT,
+    intent TEXT,
+    status TEXT DEFAULT 'NEW',
+    assigned_to TEXT,
+    priority TEXT DEFAULT 'NORMAL',
+    mode TEXT DEFAULT 'BOT',
     model TEXT,
     budget REAL,
     date_pref TEXT,
@@ -30,6 +38,7 @@ db.exec(`
     phone TEXT,
     last_intent TEXT,
     last_source TEXT,
+    last_message_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
@@ -38,6 +47,7 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id TEXT NOT NULL,
     role TEXT NOT NULL,
+    direction TEXT,
     content TEXT NOT NULL,
     intent TEXT,
     source TEXT,
@@ -88,7 +98,54 @@ db.exec(`
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS appointments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    lead_session_id TEXT NOT NULL,
+    scheduled_at TEXT NOT NULL,
+    vehicle_id INTEGER,
+    status TEXT NOT NULL DEFAULT 'PENDING',
+    confirmation_state TEXT NOT NULL DEFAULT 'PROPOSED',
+    proposal_options TEXT,
+    notes TEXT,
+    reminder_2h_sent_at TEXT,
+    reminder_15m_sent_at TEXT,
+    confirmed_at TEXT,
+    cancelled_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (lead_session_id) REFERENCES leads(session_id)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_appointments_scheduled_at
+  ON appointments(scheduled_at);
+
+  CREATE INDEX IF NOT EXISTS idx_appointments_lead
+  ON appointments(lead_session_id, updated_at);
 `);
+
+function ensureSqliteColumn(tableName, columnName, definition) {
+  const cols = db.prepare(`PRAGMA table_info(${tableName})`).all();
+  const exists = cols.some((col) => String(col.name || "").toLowerCase() === String(columnName).toLowerCase());
+  if (!exists) {
+    db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+  }
+}
+
+function ensureSqliteSchemaEvolution() {
+  ensureSqliteColumn("leads", "name", "TEXT");
+  ensureSqliteColumn("leads", "source", "TEXT");
+  ensureSqliteColumn("leads", "language", "TEXT");
+  ensureSqliteColumn("leads", "intent", "TEXT");
+  ensureSqliteColumn("leads", "status", "TEXT DEFAULT 'NEW'");
+  ensureSqliteColumn("leads", "assigned_to", "TEXT");
+  ensureSqliteColumn("leads", "priority", "TEXT DEFAULT 'NORMAL'");
+  ensureSqliteColumn("leads", "mode", "TEXT DEFAULT 'BOT'");
+  ensureSqliteColumn("leads", "last_message_at", "TEXT");
+  ensureSqliteColumn("messages", "direction", "TEXT");
+}
+
+ensureSqliteSchemaEvolution();
 
 const DEFAULT_INVENTORY = [
   {
@@ -224,6 +281,14 @@ async function ensurePgMessagingSchema() {
   await pgPool.query(`
     CREATE TABLE IF NOT EXISTS leads (
       session_id TEXT PRIMARY KEY,
+      name TEXT,
+      source TEXT,
+      language TEXT,
+      intent TEXT,
+      status TEXT DEFAULT 'NEW',
+      assigned_to TEXT,
+      priority TEXT DEFAULT 'NORMAL',
+      mode TEXT DEFAULT 'BOT',
       model TEXT,
       budget DOUBLE PRECISION,
       date_pref TEXT,
@@ -231,6 +296,7 @@ async function ensurePgMessagingSchema() {
       phone TEXT,
       last_intent TEXT,
       last_source TEXT,
+      last_message_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
@@ -241,6 +307,7 @@ async function ensurePgMessagingSchema() {
       id BIGSERIAL PRIMARY KEY,
       session_id TEXT NOT NULL,
       role TEXT NOT NULL,
+      direction TEXT,
       content TEXT NOT NULL,
       intent TEXT,
       source TEXT,
@@ -284,6 +351,46 @@ async function ensurePgMessagingSchema() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+
+  await pgPool.query(`
+    CREATE TABLE IF NOT EXISTS appointments (
+      id BIGSERIAL PRIMARY KEY,
+      lead_session_id TEXT NOT NULL REFERENCES leads(session_id),
+      scheduled_at TIMESTAMPTZ NOT NULL,
+      vehicle_id BIGINT,
+      status TEXT NOT NULL DEFAULT 'PENDING',
+      confirmation_state TEXT NOT NULL DEFAULT 'PROPOSED',
+      proposal_options JSONB,
+      notes TEXT,
+      reminder_2h_sent_at TIMESTAMPTZ,
+      reminder_15m_sent_at TIMESTAMPTZ,
+      confirmed_at TIMESTAMPTZ,
+      cancelled_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pgPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS name TEXT`);
+  await pgPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS source TEXT`);
+  await pgPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS language TEXT`);
+  await pgPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS intent TEXT`);
+  await pgPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'NEW'`);
+  await pgPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS assigned_to TEXT`);
+  await pgPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS priority TEXT DEFAULT 'NORMAL'`);
+  await pgPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS mode TEXT DEFAULT 'BOT'`);
+  await pgPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS last_message_at TIMESTAMPTZ`);
+  await pgPool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS direction TEXT`);
+
+  await pgPool.query(`
+    CREATE INDEX IF NOT EXISTS idx_appointments_scheduled_at
+    ON appointments(scheduled_at)
+  `);
+
+  await pgPool.query(`
+    CREATE INDEX IF NOT EXISTS idx_appointments_lead
+    ON appointments(lead_session_id, updated_at)
+  `);
 }
 
 const pgMessagingReady = ensurePgMessagingSchema().catch((error) => {
@@ -292,12 +399,20 @@ const pgMessagingReady = ensurePgMessagingSchema().catch((error) => {
 
 const upsertLeadStmt = db.prepare(`
   INSERT INTO leads (
-    session_id, model, budget, date_pref, email, phone, last_intent, last_source, created_at, updated_at
+    session_id, name, source, language, intent, status, assigned_to, priority, mode, model, budget, date_pref, email, phone, last_intent, last_source, last_message_at, created_at, updated_at
   )
   VALUES (
-    @session_id, @model, @budget, @date_pref, @email, @phone, @last_intent, @last_source, @created_at, @updated_at
+    @session_id, @name, @source, @language, @intent, @status, @assigned_to, @priority, @mode, @model, @budget, @date_pref, @email, @phone, @last_intent, @last_source, @last_message_at, @created_at, @updated_at
   )
   ON CONFLICT(session_id) DO UPDATE SET
+    name = excluded.name,
+    source = excluded.source,
+    language = excluded.language,
+    intent = excluded.intent,
+    status = excluded.status,
+    assigned_to = excluded.assigned_to,
+    priority = excluded.priority,
+    mode = excluded.mode,
     model = excluded.model,
     budget = excluded.budget,
     date_pref = excluded.date_pref,
@@ -305,12 +420,13 @@ const upsertLeadStmt = db.prepare(`
     phone = excluded.phone,
     last_intent = excluded.last_intent,
     last_source = excluded.last_source,
+    last_message_at = excluded.last_message_at,
     updated_at = excluded.updated_at
 `);
 
 const insertMessageStmt = db.prepare(`
-  INSERT INTO messages (session_id, role, content, intent, source, created_at)
-  VALUES (?, ?, ?, ?, ?, ?)
+  INSERT INTO messages (session_id, role, direction, content, intent, source, created_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?)
 `);
 
 const insertFeedbackStmt = db.prepare(`
@@ -362,9 +478,17 @@ export async function persistDealerTurnToSqlite({ sessionId, userMessage, aiResu
       await client.query(
         `
           INSERT INTO leads (
-            session_id, model, budget, date_pref, email, phone, last_intent, last_source, created_at, updated_at
-          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+            session_id, name, source, language, intent, status, assigned_to, priority, mode, model, budget, date_pref, email, phone, last_intent, last_source, last_message_at, created_at, updated_at
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
           ON CONFLICT(session_id) DO UPDATE SET
+            name = EXCLUDED.name,
+            source = EXCLUDED.source,
+            language = EXCLUDED.language,
+            intent = EXCLUDED.intent,
+            status = EXCLUDED.status,
+            assigned_to = EXCLUDED.assigned_to,
+            priority = EXCLUDED.priority,
+            mode = EXCLUDED.mode,
             model = EXCLUDED.model,
             budget = EXCLUDED.budget,
             date_pref = EXCLUDED.date_pref,
@@ -372,10 +496,19 @@ export async function persistDealerTurnToSqlite({ sessionId, userMessage, aiResu
             phone = EXCLUDED.phone,
             last_intent = EXCLUDED.last_intent,
             last_source = EXCLUDED.last_source,
+            last_message_at = EXCLUDED.last_message_at,
             updated_at = EXCLUDED.updated_at
         `,
         [
           sessionId,
+          null,
+          "bot",
+          null,
+          aiResult?.intent ?? null,
+          "QUALIFYING",
+          null,
+          "NORMAL",
+          "BOT",
           entities.model ?? null,
           entities.budget ?? null,
           entities.date ?? null,
@@ -384,23 +517,26 @@ export async function persistDealerTurnToSqlite({ sessionId, userMessage, aiResu
           aiResult?.intent ?? null,
           aiResult?.source ?? "fallback",
           timestamp,
+          timestamp,
           timestamp
         ]
       );
 
       await client.query(
         `
-          INSERT INTO messages (session_id, role, content, intent, source, created_at)
-          VALUES ($1,$2,$3,$4,$5,$6), ($1,$7,$8,$9,$10,$6)
+          INSERT INTO messages (session_id, role, direction, content, intent, source, created_at)
+          VALUES ($1,$2,$3,$4,$5,$6,$7), ($1,$8,$9,$10,$11,$12,$7)
         `,
         [
           sessionId,
           "user",
+          "in",
           userMessage || "",
           aiResult?.intent ?? null,
           aiResult?.source ?? "fallback",
           timestamp,
           "assistant",
+          "out",
           aiResult?.reply || "",
           aiResult?.intent ?? null,
           aiResult?.source ?? "fallback"
@@ -426,6 +562,14 @@ export async function persistDealerTurnToSqlite({ sessionId, userMessage, aiResu
 
     upsertLeadStmt.run({
       session_id: sessionId,
+      name: null,
+      source: "bot",
+      language: null,
+      intent: aiResult?.intent ?? null,
+      status: "QUALIFYING",
+      assigned_to: null,
+      priority: "NORMAL",
+      mode: "BOT",
       model: entities.model ?? null,
       budget: entities.budget ?? null,
       date_pref: entities.date ?? null,
@@ -433,6 +577,7 @@ export async function persistDealerTurnToSqlite({ sessionId, userMessage, aiResu
       phone: contact.phone ?? null,
       last_intent: aiResult?.intent ?? null,
       last_source: aiResult?.source ?? "fallback",
+      last_message_at: timestamp,
       created_at: timestamp,
       updated_at: timestamp
     });
@@ -440,6 +585,7 @@ export async function persistDealerTurnToSqlite({ sessionId, userMessage, aiResu
     insertMessageStmt.run(
       sessionId,
       "user",
+      "in",
       userMessage || "",
       aiResult?.intent ?? null,
       aiResult?.source ?? "fallback",
@@ -449,6 +595,7 @@ export async function persistDealerTurnToSqlite({ sessionId, userMessage, aiResu
     insertMessageStmt.run(
       sessionId,
       "assistant",
+      "out",
       aiResult?.reply || "",
       aiResult?.intent ?? null,
       aiResult?.source ?? "fallback",
@@ -488,14 +635,14 @@ export async function persistIncomingUserMessage({ sessionId, userMessage = "", 
     await pgMessagingReady;
     await pgPool.query(
       `
-        INSERT INTO messages (session_id, role, content, intent, source, created_at)
-        VALUES ($1,$2,$3,$4,$5,$6)
+        INSERT INTO messages (session_id, role, direction, content, intent, source, created_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7)
       `,
-      [sessionId, "user", userMessage, intent, source, timestamp]
+      [sessionId, "user", "in", userMessage, intent, source, timestamp]
     );
     return;
   }
-  insertMessageStmt.run(sessionId, "user", userMessage, intent, source, timestamp);
+  insertMessageStmt.run(sessionId, "user", "in", userMessage, intent, source, timestamp);
 }
 
 export async function persistOutgoingAssistantMessage({
@@ -509,14 +656,14 @@ export async function persistOutgoingAssistantMessage({
     await pgMessagingReady;
     await pgPool.query(
       `
-        INSERT INTO messages (session_id, role, content, intent, source, created_at)
-        VALUES ($1,$2,$3,$4,$5,$6)
+        INSERT INTO messages (session_id, role, direction, content, intent, source, created_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7)
       `,
-      [sessionId, "assistant", assistantMessage, intent, source, timestamp]
+      [sessionId, "assistant", "out", assistantMessage, intent, source, timestamp]
     );
     return;
   }
-  insertMessageStmt.run(sessionId, "assistant", assistantMessage, intent, source, timestamp);
+  insertMessageStmt.run(sessionId, "assistant", "out", assistantMessage, intent, source, timestamp);
 }
 
 export async function getConversationSettings(sessionId) {
@@ -832,6 +979,515 @@ export async function listDealerMessagesBySession(sessionId, { limit = 500 } = {
     .all(sessionId, safeLimit);
 
   return rows;
+}
+
+const LEAD_PIPELINE_STATUSES = new Set([
+  "NEW",
+  "QUALIFYING",
+  "QUALIFIED",
+  "APPT_PENDING",
+  "BOOKED",
+  "NO_RESPONSE",
+  "CLOSED_WON",
+  "CLOSED_LOST"
+]);
+
+function normalizeLeadStatus(value, fallback = "NEW") {
+  const raw = String(value || fallback).trim().toUpperCase();
+  if (LEAD_PIPELINE_STATUSES.has(raw)) return raw;
+  return fallback;
+}
+
+export async function getLeadBySessionId(sessionId) {
+  if (!sessionId) return null;
+  if (usePgInventory && pgPool) {
+    await pgMessagingReady;
+    const result = await pgPool.query(
+      `
+        SELECT session_id, name, source, language, intent, status, assigned_to, priority, mode, model, budget, date_pref, email, phone, last_intent, last_source, last_message_at, created_at, updated_at
+        FROM leads
+        WHERE session_id = $1
+        LIMIT 1
+      `,
+      [sessionId]
+    );
+    return result.rows?.[0] || null;
+  }
+
+  return (
+    db
+      .prepare(
+        `
+        SELECT session_id, name, source, language, intent, status, assigned_to, priority, mode, model, budget, date_pref, email, phone, last_intent, last_source, last_message_at, created_at, updated_at
+        FROM leads
+        WHERE session_id = ?
+        LIMIT 1
+        `
+      )
+      .get(sessionId) || null
+  );
+}
+
+export async function upsertLeadProfile({
+  sessionId,
+  phone = null,
+  name = null,
+  source = "whatsapp",
+  language = null,
+  intent = null,
+  status = "NEW",
+  assignedTo = null,
+  priority = "NORMAL",
+  mode = "BOT",
+  lastMessageAt = null
+} = {}) {
+  if (!sessionId) return null;
+  const now = new Date().toISOString();
+  const existing = await getLeadBySessionId(sessionId);
+  const next = {
+    session_id: sessionId,
+    name: name ?? existing?.name ?? null,
+    source: source ?? existing?.source ?? "whatsapp",
+    language: language ?? existing?.language ?? null,
+    intent: intent ?? existing?.intent ?? null,
+    status: normalizeLeadStatus(status, existing?.status || "NEW"),
+    assigned_to: assignedTo ?? existing?.assigned_to ?? null,
+    priority: String(priority ?? existing?.priority ?? "NORMAL").toUpperCase(),
+    mode: String(mode ?? existing?.mode ?? "BOT").toUpperCase(),
+    model: existing?.model ?? null,
+    budget: existing?.budget ?? null,
+    date_pref: existing?.date_pref ?? null,
+    email: existing?.email ?? null,
+    phone: phone ?? existing?.phone ?? null,
+    last_intent: intent ?? existing?.last_intent ?? null,
+    last_source: source ?? existing?.last_source ?? "whatsapp",
+    last_message_at: lastMessageAt || now,
+    created_at: existing?.created_at || now,
+    updated_at: now
+  };
+
+  if (usePgInventory && pgPool) {
+    await pgMessagingReady;
+    await pgPool.query(
+      `
+        INSERT INTO leads (
+          session_id, name, source, language, intent, status, assigned_to, priority, mode, model, budget, date_pref, email, phone, last_intent, last_source, last_message_at, created_at, updated_at
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+        ON CONFLICT(session_id) DO UPDATE SET
+          name = EXCLUDED.name,
+          source = EXCLUDED.source,
+          language = EXCLUDED.language,
+          intent = EXCLUDED.intent,
+          status = EXCLUDED.status,
+          assigned_to = EXCLUDED.assigned_to,
+          priority = EXCLUDED.priority,
+          mode = EXCLUDED.mode,
+          model = EXCLUDED.model,
+          budget = EXCLUDED.budget,
+          date_pref = EXCLUDED.date_pref,
+          email = EXCLUDED.email,
+          phone = EXCLUDED.phone,
+          last_intent = EXCLUDED.last_intent,
+          last_source = EXCLUDED.last_source,
+          last_message_at = EXCLUDED.last_message_at,
+          updated_at = EXCLUDED.updated_at
+      `,
+      [
+        next.session_id,
+        next.name,
+        next.source,
+        next.language,
+        next.intent,
+        next.status,
+        next.assigned_to,
+        next.priority,
+        next.mode,
+        next.model,
+        next.budget,
+        next.date_pref,
+        next.email,
+        next.phone,
+        next.last_intent,
+        next.last_source,
+        next.last_message_at,
+        next.created_at,
+        next.updated_at
+      ]
+    );
+    return getLeadBySessionId(sessionId);
+  }
+
+  upsertLeadStmt.run(next);
+  return getLeadBySessionId(sessionId);
+}
+
+export async function updateLeadStatus(sessionId, status, extras = {}) {
+  return upsertLeadProfile({
+    sessionId,
+    status,
+    ...extras
+  });
+}
+
+export async function listLeads({ limit = 200, status = "", query = "" } = {}) {
+  const safeLimit = Number.isFinite(Number(limit)) ? Math.max(1, Math.min(500, Number(limit))) : 200;
+  const normalizedStatus = String(status || "").trim().toUpperCase();
+  const normalizedQuery = String(query || "").trim().toLowerCase();
+  const hasStatus = normalizedStatus.length > 0;
+  const hasQuery = normalizedQuery.length > 0;
+
+  if (usePgInventory && pgPool) {
+    await pgMessagingReady;
+    const where = [];
+    const params = [];
+    let idx = 1;
+    if (hasStatus) {
+      where.push(`UPPER(status) = $${idx++}`);
+      params.push(normalizedStatus);
+    }
+    if (hasQuery) {
+      where.push(`(LOWER(session_id) LIKE $${idx} OR LOWER(COALESCE(name,'')) LIKE $${idx} OR LOWER(COALESCE(phone,'')) LIKE $${idx})`);
+      params.push(`%${normalizedQuery}%`);
+      idx += 1;
+    }
+
+    params.push(safeLimit);
+    const result = await pgPool.query(
+      `
+        SELECT session_id, name, source, language, intent, status, assigned_to, priority, mode, phone, last_message_at, updated_at
+        FROM leads
+        ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+        ORDER BY COALESCE(last_message_at, updated_at) DESC
+        LIMIT $${params.length}
+      `,
+      params
+    );
+    return result.rows || [];
+  }
+
+  const where = [];
+  const params = [];
+  if (hasStatus) {
+    where.push("UPPER(status) = ?");
+    params.push(normalizedStatus);
+  }
+  if (hasQuery) {
+    where.push("(LOWER(session_id) LIKE ? OR LOWER(COALESCE(name,'')) LIKE ? OR LOWER(COALESCE(phone,'')) LIKE ?)");
+    params.push(`%${normalizedQuery}%`, `%${normalizedQuery}%`, `%${normalizedQuery}%`);
+  }
+  params.push(safeLimit);
+
+  return db
+    .prepare(
+      `
+      SELECT session_id, name, source, language, intent, status, assigned_to, priority, mode, phone, last_message_at, updated_at
+      FROM leads
+      ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+      ORDER BY COALESCE(last_message_at, updated_at) DESC
+      LIMIT ?
+      `
+    )
+    .all(...params);
+}
+
+function normalizeAppointmentStatus(status) {
+  const value = String(status || "PENDING").trim().toUpperCase();
+  const allowed = new Set(["PENDING", "CONFIRMED", "CANCELLED", "RESCHEDULED", "NO_SHOW", "COMPLETED"]);
+  return allowed.has(value) ? value : "PENDING";
+}
+
+function safeJsonStringify(value) {
+  try {
+    return JSON.stringify(value ?? []);
+  } catch {
+    return "[]";
+  }
+}
+
+function safeJsonParse(value) {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function createAppointment({
+  leadSessionId,
+  scheduledAt,
+  vehicleId = null,
+  status = "PENDING",
+  confirmationState = "PROPOSED",
+  proposalOptions = [],
+  notes = ""
+} = {}) {
+  const now = new Date().toISOString();
+  const normalizedStatus = normalizeAppointmentStatus(status);
+  const proposalJson = safeJsonStringify(proposalOptions);
+
+  if (usePgInventory && pgPool) {
+    await pgMessagingReady;
+    const result = await pgPool.query(
+      `
+        INSERT INTO appointments (
+          lead_session_id, scheduled_at, vehicle_id, status, confirmation_state, proposal_options, notes, created_at, updated_at
+        )
+        VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9)
+        RETURNING *
+      `,
+      [leadSessionId, scheduledAt, vehicleId, normalizedStatus, confirmationState, proposalJson, notes, now, now]
+    );
+    return result.rows?.[0] || null;
+  }
+
+  const insertRes = db
+    .prepare(
+      `
+      INSERT INTO appointments (
+        lead_session_id, scheduled_at, vehicle_id, status, confirmation_state, proposal_options, notes, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    )
+    .run(leadSessionId, scheduledAt, vehicleId, normalizedStatus, confirmationState, proposalJson, notes, now, now);
+
+  return db.prepare(`SELECT * FROM appointments WHERE id = ? LIMIT 1`).get(Number(insertRes.lastInsertRowid)) || null;
+}
+
+export async function getAppointmentById(id) {
+  const safeId = Number(id);
+  if (!Number.isFinite(safeId)) return null;
+  if (usePgInventory && pgPool) {
+    await pgMessagingReady;
+    const result = await pgPool.query(`SELECT * FROM appointments WHERE id = $1 LIMIT 1`, [safeId]);
+    return result.rows?.[0] || null;
+  }
+  return db.prepare(`SELECT * FROM appointments WHERE id = ? LIMIT 1`).get(safeId) || null;
+}
+
+export async function listAppointments({ from = null, to = null, status = "", limit = 500 } = {}) {
+  const safeLimit = Number.isFinite(Number(limit)) ? Math.max(1, Math.min(1000, Number(limit))) : 500;
+  const normalizedStatus = String(status || "").trim().toUpperCase();
+  const hasStatus = normalizedStatus.length > 0;
+
+  if (usePgInventory && pgPool) {
+    await pgMessagingReady;
+    const where = [];
+    const params = [];
+    let idx = 1;
+    if (from) {
+      where.push(`scheduled_at >= $${idx++}`);
+      params.push(from);
+    }
+    if (to) {
+      where.push(`scheduled_at <= $${idx++}`);
+      params.push(to);
+    }
+    if (hasStatus) {
+      where.push(`UPPER(status) = $${idx++}`);
+      params.push(normalizedStatus);
+    }
+    params.push(safeLimit);
+    const result = await pgPool.query(
+      `
+      SELECT a.*, l.name AS lead_name, l.phone AS lead_phone, l.priority AS lead_priority, l.status AS lead_status
+      FROM appointments a
+      LEFT JOIN leads l ON l.session_id = a.lead_session_id
+      ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+      ORDER BY a.scheduled_at ASC
+      LIMIT $${params.length}
+      `,
+      params
+    );
+    return (result.rows || []).map((row) => ({
+      ...row,
+      proposal_options: Array.isArray(row.proposal_options) ? row.proposal_options : []
+    }));
+  }
+
+  const where = [];
+  const params = [];
+  if (from) {
+    where.push("a.scheduled_at >= ?");
+    params.push(from);
+  }
+  if (to) {
+    where.push("a.scheduled_at <= ?");
+    params.push(to);
+  }
+  if (hasStatus) {
+    where.push("UPPER(a.status) = ?");
+    params.push(normalizedStatus);
+  }
+  params.push(safeLimit);
+
+  const rows = db
+    .prepare(
+      `
+      SELECT a.*, l.name AS lead_name, l.phone AS lead_phone, l.priority AS lead_priority, l.status AS lead_status
+      FROM appointments a
+      LEFT JOIN leads l ON l.session_id = a.lead_session_id
+      ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+      ORDER BY a.scheduled_at ASC
+      LIMIT ?
+      `
+    )
+    .all(...params);
+
+  return rows.map((row) => ({
+    ...row,
+    proposal_options: safeJsonParse(row.proposal_options)
+  }));
+}
+
+export async function updateAppointment(id, patch = {}) {
+  const existing = await getAppointmentById(id);
+  if (!existing) return null;
+  const now = new Date().toISOString();
+  const next = {
+    scheduled_at: patch.scheduledAt ?? patch.scheduled_at ?? existing.scheduled_at,
+    vehicle_id: patch.vehicleId ?? patch.vehicle_id ?? existing.vehicle_id ?? null,
+    status: normalizeAppointmentStatus(patch.status ?? existing.status),
+    confirmation_state: patch.confirmationState ?? patch.confirmation_state ?? existing.confirmation_state ?? "PROPOSED",
+    proposal_options: patch.proposalOptions ?? patch.proposal_options ?? existing.proposal_options ?? [],
+    notes: patch.notes ?? existing.notes ?? "",
+    reminder_2h_sent_at: patch.reminder2hSentAt ?? patch.reminder_2h_sent_at ?? existing.reminder_2h_sent_at ?? null,
+    reminder_15m_sent_at: patch.reminder15mSentAt ?? patch.reminder_15m_sent_at ?? existing.reminder_15m_sent_at ?? null,
+    confirmed_at: patch.confirmedAt ?? patch.confirmed_at ?? existing.confirmed_at ?? null,
+    cancelled_at: patch.cancelledAt ?? patch.cancelled_at ?? existing.cancelled_at ?? null,
+    updated_at: now
+  };
+
+  if (usePgInventory && pgPool) {
+    await pgMessagingReady;
+    const result = await pgPool.query(
+      `
+      UPDATE appointments
+      SET scheduled_at = $1, vehicle_id = $2, status = $3, confirmation_state = $4, proposal_options = $5::jsonb, notes = $6,
+          reminder_2h_sent_at = $7, reminder_15m_sent_at = $8, confirmed_at = $9, cancelled_at = $10, updated_at = $11
+      WHERE id = $12
+      RETURNING *
+      `,
+      [
+        next.scheduled_at,
+        next.vehicle_id,
+        next.status,
+        next.confirmation_state,
+        safeJsonStringify(next.proposal_options),
+        next.notes,
+        next.reminder_2h_sent_at,
+        next.reminder_15m_sent_at,
+        next.confirmed_at,
+        next.cancelled_at,
+        next.updated_at,
+        Number(id)
+      ]
+    );
+    return result.rows?.[0] || null;
+  }
+
+  db
+    .prepare(
+      `
+      UPDATE appointments
+      SET scheduled_at = ?, vehicle_id = ?, status = ?, confirmation_state = ?, proposal_options = ?, notes = ?,
+          reminder_2h_sent_at = ?, reminder_15m_sent_at = ?, confirmed_at = ?, cancelled_at = ?, updated_at = ?
+      WHERE id = ?
+      `
+    )
+    .run(
+      next.scheduled_at,
+      next.vehicle_id,
+      next.status,
+      next.confirmation_state,
+      safeJsonStringify(next.proposal_options),
+      next.notes,
+      next.reminder_2h_sent_at,
+      next.reminder_15m_sent_at,
+      next.confirmed_at,
+      next.cancelled_at,
+      next.updated_at,
+      Number(id)
+    );
+
+  return getAppointmentById(id);
+}
+
+export async function findAppointmentsForReminder({ minutesBefore = 120 } = {}) {
+  const now = new Date();
+  const targetStart = new Date(now.getTime() + (minutesBefore - 1) * 60_000).toISOString();
+  const targetEnd = new Date(now.getTime() + minutesBefore * 60_000).toISOString();
+  const reminderField = minutesBefore <= 20 ? "reminder_15m_sent_at" : "reminder_2h_sent_at";
+
+  if (usePgInventory && pgPool) {
+    await pgMessagingReady;
+    const result = await pgPool.query(
+      `
+      SELECT a.*, l.phone AS lead_phone
+      FROM appointments a
+      LEFT JOIN leads l ON l.session_id = a.lead_session_id
+      WHERE a.status IN ('PENDING', 'CONFIRMED')
+        AND a.scheduled_at >= $1
+        AND a.scheduled_at < $2
+        AND a.${reminderField} IS NULL
+      ORDER BY a.scheduled_at ASC
+      `,
+      [targetStart, targetEnd]
+    );
+    return result.rows || [];
+  }
+
+  return db
+    .prepare(
+      `
+      SELECT a.*, l.phone AS lead_phone
+      FROM appointments a
+      LEFT JOIN leads l ON l.session_id = a.lead_session_id
+      WHERE a.status IN ('PENDING', 'CONFIRMED')
+        AND a.scheduled_at >= ?
+        AND a.scheduled_at < ?
+        AND a.${reminderField} IS NULL
+      ORDER BY a.scheduled_at ASC
+      `
+    )
+    .all(targetStart, targetEnd);
+}
+
+export async function getLatestOpenAppointmentForLead(leadSessionId) {
+  if (!leadSessionId) return null;
+  if (usePgInventory && pgPool) {
+    await pgMessagingReady;
+    const result = await pgPool.query(
+      `
+      SELECT *
+      FROM appointments
+      WHERE lead_session_id = $1
+        AND status IN ('PENDING', 'CONFIRMED', 'RESCHEDULED')
+      ORDER BY updated_at DESC, id DESC
+      LIMIT 1
+      `,
+      [leadSessionId]
+    );
+    return result.rows?.[0] || null;
+  }
+
+  return (
+    db
+      .prepare(
+        `
+      SELECT *
+      FROM appointments
+      WHERE lead_session_id = ?
+        AND status IN ('PENDING', 'CONFIRMED', 'RESCHEDULED')
+      ORDER BY updated_at DESC, id DESC
+      LIMIT 1
+      `
+      )
+      .get(leadSessionId) || null
+  );
 }
 
 export async function getUnreadMessagesTotal() {

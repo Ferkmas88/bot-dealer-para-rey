@@ -9,6 +9,8 @@ const API_BASE_URL = (
 ).replace(/\/+$/, "");
 const API_URL = `${API_BASE_URL}/dealer/ai`;
 const DB_API_URL = `${API_BASE_URL}/dealer/db/inventory`;
+const APPOINTMENTS_API_URL = `${API_BASE_URL}/dealer/db/appointments`;
+const LEADS_API_URL = `${API_BASE_URL}/dealer/db/leads`;
 const CONVERSATIONS_API_URL = `${API_BASE_URL}/dealer/db/conversations`;
 const PUSH_CONFIG_URL = `${API_BASE_URL}/dealer/push/config`;
 const PUSH_SUBSCRIBE_URL = `${API_BASE_URL}/dealer/push/subscribe`;
@@ -64,6 +66,13 @@ function formatTimestamp(value) {
     hour: "2-digit",
     minute: "2-digit"
   });
+}
+
+function toDateInputValue(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 10);
 }
 
 function loadSeenCounts() {
@@ -145,6 +154,7 @@ export default function App() {
   const [authError, setAuthError] = useState("");
   const [routeMode] = useState(resolveRouteModeFromPathname);
   const [activeView, setActiveView] = useState(resolveAdminViewFromPathname);
+  const [adminView, setAdminView] = useState("inventory");
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushStatus, setPushStatus] = useState("");
   const [notificationPermission, setNotificationPermission] = useState(() => {
@@ -168,6 +178,18 @@ export default function App() {
   const [inventoryError, setInventoryError] = useState("");
   const [inventoryForm, setInventoryForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState(null);
+
+  const [appointmentsRows, setAppointmentsRows] = useState([]);
+  const [appointmentsLoading, setAppointmentsLoading] = useState(false);
+  const [appointmentsError, setAppointmentsError] = useState("");
+  const [appointmentsDateFilter, setAppointmentsDateFilter] = useState(() => toDateInputValue(new Date()));
+  const [leadRows, setLeadRows] = useState([]);
+  const [appointmentForm, setAppointmentForm] = useState({
+    lead_session_id: "",
+    scheduled_at: "",
+    notes: ""
+  });
+  const [savingAppointment, setSavingAppointment] = useState(false);
 
   const [conversationRows, setConversationRows] = useState([]);
   const [conversationsLoading, setConversationsLoading] = useState(false);
@@ -227,10 +249,17 @@ export default function App() {
   }, [isAuthenticated]);
 
   useEffect(() => {
-    if (isAuthenticated && routeMode === "admin") {
+    if (isAuthenticated && routeMode === "admin" && adminView === "inventory") {
       loadInventory();
     }
-  }, [isAuthenticated, routeMode]);
+  }, [isAuthenticated, routeMode, adminView]);
+
+  useEffect(() => {
+    if (isAuthenticated && routeMode === "admin" && adminView === "appointments") {
+      loadAppointments();
+      loadLeads();
+    }
+  }, [isAuthenticated, routeMode, adminView, appointmentsDateFilter]);
 
   useEffect(() => {
     if (!isAuthenticated || !pushSupported) return;
@@ -412,6 +441,7 @@ export default function App() {
       setIsAuthenticated(true);
       setAuthError("");
       setPasswordInput("");
+      setAdminView("inventory");
       setActiveView(defaultViewForRouteMode(routeModeRef.current));
       return;
     }
@@ -560,6 +590,83 @@ export default function App() {
       setInventoryError("No pude cargar inventario.");
     } finally {
       setInventoryLoading(false);
+    }
+  }
+
+  async function loadLeads() {
+    try {
+      const res = await fetch(`${LEADS_API_URL}?limit=300`);
+      const data = await res.json();
+      setLeadRows(Array.isArray(data?.rows) ? data.rows : []);
+    } catch {
+      setLeadRows([]);
+    }
+  }
+
+  async function loadAppointments() {
+    setAppointmentsLoading(true);
+    setAppointmentsError("");
+    try {
+      const params = new URLSearchParams({ limit: "500" });
+      if (appointmentsDateFilter) {
+        const from = `${appointmentsDateFilter}T00:00:00.000Z`;
+        const to = `${appointmentsDateFilter}T23:59:59.999Z`;
+        params.set("from", from);
+        params.set("to", to);
+      }
+      const res = await fetch(`${APPOINTMENTS_API_URL}?${params.toString()}`);
+      const data = await res.json();
+      setAppointmentsRows(Array.isArray(data?.rows) ? data.rows : []);
+    } catch {
+      setAppointmentsError("No pude cargar citas.");
+    } finally {
+      setAppointmentsLoading(false);
+    }
+  }
+
+  async function saveAppointment(e) {
+    e.preventDefault();
+    if (savingAppointment) return;
+    setAppointmentsError("");
+    if (!appointmentForm.lead_session_id || !appointmentForm.scheduled_at) {
+      setAppointmentsError("Lead y fecha/hora son requeridos.");
+      return;
+    }
+
+    setSavingAppointment(true);
+    try {
+      const iso = new Date(appointmentForm.scheduled_at).toISOString();
+      const payload = {
+        lead_session_id: appointmentForm.lead_session_id.trim(),
+        scheduled_at: iso,
+        notes: appointmentForm.notes || ""
+      };
+
+      const res = await fetch(APPOINTMENTS_API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error("request failed");
+
+      setAppointmentForm({ lead_session_id: "", scheduled_at: "", notes: "" });
+      await loadAppointments();
+    } catch {
+      setAppointmentsError("No pude crear la cita.");
+    } finally {
+      setSavingAppointment(false);
+    }
+  }
+
+  async function confirmAppointment(id) {
+    if (!id) return;
+    setAppointmentsError("");
+    try {
+      const res = await fetch(`${APPOINTMENTS_API_URL}/${id}/confirm`, { method: "POST" });
+      if (!res.ok) throw new Error("request failed");
+      await loadAppointments();
+    } catch {
+      setAppointmentsError("No pude confirmar la cita.");
     }
   }
 
@@ -873,9 +980,31 @@ export default function App() {
               </button>
             )}
             {routeMode === "admin" ? (
-              <button type="button" className="secondary-btn" onClick={loadInventory} disabled={inventoryLoading}>
-                {inventoryLoading ? "Cargando..." : "Sincronizar"}
-              </button>
+              <>
+                <button
+                  type="button"
+                  className={adminView === "inventory" ? "active-btn" : "secondary-btn"}
+                  onClick={() => setAdminView("inventory")}
+                >
+                  Inventario
+                </button>
+                <button
+                  type="button"
+                  className={adminView === "appointments" ? "active-btn" : "secondary-btn"}
+                  onClick={() => setAdminView("appointments")}
+                >
+                  Citas
+                </button>
+                {adminView === "inventory" ? (
+                  <button type="button" className="secondary-btn" onClick={loadInventory} disabled={inventoryLoading}>
+                    {inventoryLoading ? "Cargando..." : "Sincronizar"}
+                  </button>
+                ) : (
+                  <button type="button" className="secondary-btn" onClick={loadAppointments} disabled={appointmentsLoading}>
+                    {appointmentsLoading ? "Cargando..." : "Refrescar citas"}
+                  </button>
+                )}
+              </>
             ) : (
               <button
                 type="button"
@@ -905,6 +1034,7 @@ export default function App() {
         {pushStatus ? <p className="hint">{pushStatus}</p> : null}
 
         {routeMode === "admin" ? (
+          adminView === "inventory" ? (
           <section className="crm-layout">
             <section className="crm-main">
               <section className="kpi-grid">
@@ -1009,6 +1139,107 @@ export default function App() {
               <InputBox onSend={sendMessage} disabled={loading} />
             </aside>
           </section>
+          ) : (
+          <section className="crm-layout">
+            <section className="crm-main">
+              <article className="panel crm-form-panel">
+                <div className="panel-head">
+                  <h2>Nueva cita</h2>
+                </div>
+                {appointmentsError ? <p className="error-text">{appointmentsError}</p> : null}
+                <form className="inventory-form" onSubmit={saveAppointment}>
+                  <input
+                    list="leads-list"
+                    placeholder="Lead session_id o telefono"
+                    value={appointmentForm.lead_session_id}
+                    onChange={(e) => setAppointmentForm((prev) => ({ ...prev, lead_session_id: e.target.value }))}
+                    required
+                  />
+                  <datalist id="leads-list">
+                    {leadRows.map((lead) => (
+                      <option key={lead.session_id} value={lead.session_id}>
+                        {lead.name || lead.phone || lead.session_id}
+                      </option>
+                    ))}
+                  </datalist>
+                  <input
+                    type="datetime-local"
+                    value={appointmentForm.scheduled_at}
+                    onChange={(e) => setAppointmentForm((prev) => ({ ...prev, scheduled_at: e.target.value }))}
+                    required
+                  />
+                  <input
+                    placeholder="Notas"
+                    value={appointmentForm.notes}
+                    onChange={(e) => setAppointmentForm((prev) => ({ ...prev, notes: e.target.value }))}
+                  />
+                  <button type="submit" disabled={savingAppointment}>
+                    {savingAppointment ? "Guardando..." : "Crear cita"}
+                  </button>
+                </form>
+              </article>
+
+              <article className="panel crm-table-panel">
+                <div className="panel-head">
+                  <h2>Calendario de citas</h2>
+                  <input
+                    type="date"
+                    value={appointmentsDateFilter}
+                    onChange={(e) => setAppointmentsDateFilter(e.target.value)}
+                  />
+                </div>
+                {appointmentsLoading ? <p className="subtle">Cargando citas...</p> : null}
+                <div className="inventory-table-wrap">
+                  <table className="inventory-table">
+                    <thead>
+                      <tr>
+                        <th>Fecha/Hora</th>
+                        <th>Lead</th>
+                        <th>Telefono</th>
+                        <th>Status</th>
+                        <th>Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {appointmentsRows.map((row) => (
+                        <tr key={row.id}>
+                          <td>{formatTimestamp(row.scheduled_at)}</td>
+                          <td>{row.lead_name || row.lead_session_id}</td>
+                          <td>{row.lead_phone || "-"}</td>
+                          <td>{row.status}</td>
+                          <td className="row-actions">
+                            <button
+                              type="button"
+                              className="secondary-btn"
+                              onClick={() => confirmAppointment(row.id)}
+                              disabled={String(row.status || "").toUpperCase() === "CONFIRMED"}
+                            >
+                              Confirmar
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                      {!appointmentsRows.length && !appointmentsLoading ? (
+                        <tr>
+                          <td colSpan={5}>No hay citas para este dia.</td>
+                        </tr>
+                      ) : null}
+                    </tbody>
+                  </table>
+                </div>
+              </article>
+            </section>
+
+            <aside className="panel crm-chat">
+              <div className="panel-head">
+                <h2>Resumen</h2>
+              </div>
+              <p className="subtle">Citas del dia: {appointmentsRows.length}</p>
+              <p className="subtle">Leads cargados: {leadRows.length}</p>
+              <p className="subtle">Al confirmar una cita se envia correo automatico al dueno.</p>
+            </aside>
+          </section>
+          )
         ) : (
           <section className={`panel inbox-shell ${routeMode === "whatsapp" ? "inbox-shell-wsp" : ""}`}>
             <div className="inbox-layout">
