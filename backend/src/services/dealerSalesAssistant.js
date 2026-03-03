@@ -101,9 +101,8 @@ const OPENING_PROMO_MESSAGE =
   "Dime que estas buscando (SUV, sedan o pickup) y cuanto tienes para down, y empezamos ahora mismo.\n\n" +
   "Si prefieres atencion directa, te conecto con el equipo ahora mismo.";
 
-const BOT_HELPER_PREFIX = "Soy el bot asistente de Empire Rey y te estoy ayudando 24/7.";
-const REY_CONTACT_REPLY = `${BOT_HELPER_PREFIX}\nSi deseas hablar con Rey o con el vendedor de carros, este es el contacto:\n+1 (502) 576-8116\nEmpire Rey`;
-const MECHANIC_CONTACT_REPLY = `${BOT_HELPER_PREFIX}\nSobre el mecanico: pronto estara disponible su contacto.`;
+const REY_CONTACT_REPLY = "Si deseas hablar con Rey o con el vendedor de carros, este es el contacto:\n+1 (502) 576-8116\nEmpire Rey";
+const MECHANIC_CONTACT_REPLY = "Sobre el mecanico: pronto estara disponible su contacto.";
 
 const leadMemory = {
   model: null,
@@ -1160,7 +1159,7 @@ export async function processDealerSessionMessageWithLLM(message, context = {}, 
 
     if (!appointmentSlot) {
       return {
-        reply: `${BOT_HELPER_PREFIX}\nPerfecto. Te agendo sin problema. Te funciona hoy 4pm o manana 11am?`,
+        reply: "Perfecto. Te agendo sin problema. Te funciona hoy 4pm o manana 11am?",
         intent,
         entities,
         suggestions: buildSuggestions(intent, entities, safeMessage),
@@ -1173,7 +1172,7 @@ export async function processDealerSessionMessageWithLLM(message, context = {}, 
 
     if (!customerName) {
       return {
-        reply: `${BOT_HELPER_PREFIX}\nPerfecto. Te agendo para ${appointmentSlot}. Me compartes tu nombre?`,
+        reply: `Perfecto. Te agendo para ${appointmentSlot}. Me compartes tu nombre?`,
         intent,
         entities,
         suggestions: buildSuggestions(intent, entities, safeMessage),
@@ -1185,7 +1184,7 @@ export async function processDealerSessionMessageWithLLM(message, context = {}, 
     }
 
     return {
-      reply: `${BOT_HELPER_PREFIX}\nPerfecto 🔥\nTe agendo para ${appointmentSlot}.\nNombre: ${customerName}\nTe esperamos en el lote.\nSi necesitas direccion o cambiar horario, me dices.`,
+      reply: `Perfecto 🔥\nTe agendo para ${appointmentSlot}.\nNombre: ${customerName}\nTe esperamos en el lote.\nSi necesitas direccion o cambiar horario, me dices.`,
       intent,
       entities,
       suggestions: buildSuggestions(intent, entities, safeMessage),

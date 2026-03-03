@@ -16,7 +16,6 @@ import {
 import { sendAppointmentConfirmedOwnerEmail, sendHotLeadHandoffOwnerEmail } from "../services/ownerNotifications.js";
 
 export const metaWebhookRouter = express.Router();
-const BOT_HELPER_PREFIX = "Soy el bot asistente de Empire Rey y te estoy ayudando 24/7.";
 const FIRST_CONTACT_MESSAGE =
   "Hola. Soy el asistente automatico de Empire Rey Auto Sales. Estoy aqui 24/7 para ayudarte.\n\n" +
   "Puedo ayudarte a:\n" +
@@ -105,7 +104,7 @@ async function handleAppointmentFlow({ sessionId, incomingText }) {
     await updateLeadStatus(sessionId, "NO_RESPONSE");
     return {
       handled: true,
-      reply: `${BOT_HELPER_PREFIX}\nEntendido, cita cancelada. Cuando quieras reagendar, te comparto nuevas opciones.`
+      reply: "Entendido, cita cancelada. Cuando quieras reagendar, te comparto nuevas opciones."
     };
   }
 
@@ -119,7 +118,7 @@ async function handleAppointmentFlow({ sessionId, incomingText }) {
     });
     return {
       handled: true,
-      reply: `${BOT_HELPER_PREFIX}\nResumen de tu cita:\nFecha/Hora: ${formatOptionLine(selectedAt)}\nResponde:\n1 confirmar\n2 cambiar`
+      reply: `Resumen de tu cita:\nFecha/Hora: ${formatOptionLine(selectedAt)}\nResponde:\n1 confirmar\n2 cambiar`
     };
   }
 
@@ -133,7 +132,7 @@ async function handleAppointmentFlow({ sessionId, incomingText }) {
     });
     return {
       handled: true,
-      reply: `${BOT_HELPER_PREFIX}\nResumen de tu cita:\nFecha/Hora: ${formatOptionLine(selectedAt)}\nResponde:\n1 confirmar\n2 cambiar`
+      reply: `Resumen de tu cita:\nFecha/Hora: ${formatOptionLine(selectedAt)}\nResponde:\n1 confirmar\n2 cambiar`
     };
   }
 
@@ -149,7 +148,7 @@ async function handleAppointmentFlow({ sessionId, incomingText }) {
       appointment: confirmed,
       lead
     });
-    return { handled: true, reply: `${BOT_HELPER_PREFIX}\nPerfecto, cita confirmada. Te esperamos. Si necesitas cambiar horario, responde 2.` };
+    return { handled: true, reply: "Perfecto, cita confirmada. Te esperamos. Si necesitas cambiar horario, responde 2." };
   }
 
   if (openAppt && (isRescheduleAction(text) || isTwoChoice(text))) {
@@ -161,14 +160,14 @@ async function handleAppointmentFlow({ sessionId, incomingText }) {
     });
     return {
       handled: true,
-      reply: `${BOT_HELPER_PREFIX}\nClaro, te doy dos horarios nuevos:\n1) ${formatOptionLine(options[0])}\n2) ${formatOptionLine(options[1])}\nElige 1 o 2 y luego te pido confirmacion final.`
+      reply: `Claro, te doy dos horarios nuevos:\n1) ${formatOptionLine(options[0])}\n2) ${formatOptionLine(options[1])}\nElige 1 o 2 y luego te pido confirmacion final.`
     };
   }
 
   if (openAppt && isConfirmAction(text) && openAppt.confirmation_state === "CONFIRMED") {
     return {
       handled: true,
-      reply: `${BOT_HELPER_PREFIX}\nTu cita ya esta confirmada. Si quieres cambiarla, responde reprogramar.`
+      reply: "Tu cita ya esta confirmada. Si quieres cambiarla, responde reprogramar."
     };
   }
 
@@ -184,7 +183,7 @@ async function handleAppointmentFlow({ sessionId, incomingText }) {
     await updateLeadStatus(sessionId, "APPT_PENDING");
     return {
       handled: true,
-      reply: `${BOT_HELPER_PREFIX}\nTe propongo:\n1) ${formatOptionLine(options[0])}\n2) ${formatOptionLine(options[1])}\nElige una opcion y luego te envio confirmacion final.`
+      reply: `Te propongo:\n1) ${formatOptionLine(options[0])}\n2) ${formatOptionLine(options[1])}\nElige una opcion y luego te envio confirmacion final.`
     };
   }
 
@@ -331,7 +330,7 @@ metaWebhookRouter.post("/whatsapp", async (req, res) => {
       if (isGreetingOnlyMessage(msg.body)) {
         const welcomeAlreadySent = await hasWelcomeMessageSent(sessionId);
         const greetingReply = welcomeAlreadySent
-          ? `${BOT_HELPER_PREFIX}\nHola. Dime que buscas (SUV, sedan o pickup) y tu down payment, y te ayudo ahora mismo.`
+          ? "Hola. Dime que buscas (SUV, sedan o pickup) y tu down payment, y te ayudo ahora mismo."
           : FIRST_CONTACT_MESSAGE;
         await persistIncomingUserMessage({
           sessionId,
