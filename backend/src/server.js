@@ -11,6 +11,7 @@ import { dealerDbAdminRouter } from "./routes/dealerDbAdmin.js";
 import { twilioWebhookRouter } from "./channels/twilioWebhook.js";
 import { metaWebhookRouter } from "./channels/metaWebhook.js";
 import { startAppointmentReminderJob } from "./services/appointmentReminders.js";
+import { runStartupChecks } from "./services/runtimeChecks.js";
 
 const app = express();
 const port = process.env.PORT || 4000;
@@ -53,6 +54,7 @@ app.get("*", (req, res, next) => {
 
 app.listen(port, () => {
   console.log(`Backend running on http://localhost:${port}`);
+  runStartupChecks();
 });
 
 startAppointmentReminderJob();

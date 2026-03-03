@@ -16,6 +16,8 @@ import { sendAppointmentConfirmedOwnerEmail, sendHotLeadHandoffOwnerEmail } from
 
 export const metaWebhookRouter = express.Router();
 const BOT_HELPER_PREFIX = "Soy el bot asistente de Empire Rey y te estoy ayudando 24/7.";
+const inboundMessageCache = new Map();
+const INBOUND_DEDUP_TTL_MS = 10 * 60 * 1000;
 
 function detectLanguage(text) {
   if (/[¿¡]|(hola|cita|carro|quiero|manana|direccion)/i.test(text || "")) return "es";
@@ -219,6 +221,21 @@ function extractIncomingMessages(payload) {
   return incoming;
 }
 
+function isDuplicateInboundMessage(messageId) {
+  const key = String(messageId || "").trim();
+  if (!key) return false;
+  const now = Date.now();
+  const prev = inboundMessageCache.get(key);
+  if (prev && now - prev < INBOUND_DEDUP_TTL_MS) return true;
+  inboundMessageCache.set(key, now);
+  if (inboundMessageCache.size > 3000) {
+    for (const [id, ts] of inboundMessageCache.entries()) {
+      if (now - ts > INBOUND_DEDUP_TTL_MS) inboundMessageCache.delete(id);
+    }
+  }
+  return false;
+}
+
 async function sendWhatsAppText({ to, text }) {
   const cfg = getMetaConfig();
 
@@ -269,6 +286,9 @@ metaWebhookRouter.post("/whatsapp", async (req, res) => {
 
   try {
     for (const msg of incoming) {
+      if (isDuplicateInboundMessage(msg.messageId)) {
+        continue;
+      }
       const sessionId = `wa_meta:${msg.from}`;
       const existingLead = await getLeadBySessionId(sessionId);
       const settings = await getConversationSettings(sessionId);

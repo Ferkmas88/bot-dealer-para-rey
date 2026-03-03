@@ -19,6 +19,8 @@ import { sendAppointmentConfirmedOwnerEmail, sendHotLeadHandoffOwnerEmail } from
 export const twilioWebhookRouter = express.Router();
 const cadenceBySession = new Map();
 const BOT_HELPER_PREFIX = "Soy el bot asistente de Empire Rey y te estoy ayudando 24/7.";
+const inboundMessageCache = new Map();
+const INBOUND_DEDUP_TTL_MS = 10 * 60 * 1000;
 
 function isLowSignalMessage(text) {
   const value = String(text || "").trim().toLowerCase();
@@ -65,6 +67,21 @@ function markReplySent(sessionId, wasLowSignalReply = false) {
     current.lastLowSignalReplyAt = now;
   }
   cadenceBySession.set(sessionId, current);
+}
+
+function isDuplicateInboundMessage(messageId) {
+  const key = String(messageId || "").trim();
+  if (!key) return false;
+  const now = Date.now();
+  const prev = inboundMessageCache.get(key);
+  if (prev && now - prev < INBOUND_DEDUP_TTL_MS) return true;
+  inboundMessageCache.set(key, now);
+  if (inboundMessageCache.size > 2000) {
+    for (const [id, ts] of inboundMessageCache.entries()) {
+      if (now - ts > INBOUND_DEDUP_TTL_MS) inboundMessageCache.delete(id);
+    }
+  }
+  return false;
 }
 
 function detectLanguage(text) {
@@ -244,6 +261,12 @@ twilioWebhookRouter.post("/whatsapp", async (req, res) => {
   const from = req.body.From || "unknown";
   const incomingText = req.body.Body || "";
   const sessionId = `wa:${from}`;
+  const inboundMessageId = req.body.MessageSid || "";
+
+  if (isDuplicateInboundMessage(inboundMessageId)) {
+    const twiml = new twilio.twiml.MessagingResponse();
+    return res.type("text/xml").send(twiml.toString());
+  }
 
   try {
     const existingLead = await getLeadBySessionId(sessionId);
