@@ -197,6 +197,11 @@ export default function App() {
   const [selectedSessionId, setSelectedSessionId] = useState("");
   const [selectedMessages, setSelectedMessages] = useState([]);
   const [selectedSettings, setSelectedSettings] = useState({ bot_enabled: 1, last_read_at: null });
+  const [selectedLead, setSelectedLead] = useState(null);
+  const [selectedAppointment, setSelectedAppointment] = useState(null);
+  const [appointmentActionLoading, setAppointmentActionLoading] = useState(false);
+  const [appointmentActionError, setAppointmentActionError] = useState("");
+  const [appointmentActionSuccess, setAppointmentActionSuccess] = useState("");
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [messagesError, setMessagesError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -727,6 +732,23 @@ export default function App() {
     }
   }
 
+  async function loadConversationAppointment(targetSessionId, { mountedRef = null } = {}) {
+    if (!targetSessionId) return;
+    try {
+      const encoded = encodeURIComponent(targetSessionId);
+      const res = await fetch(`${CONVERSATIONS_API_URL}/${encoded}/appointment`);
+      const data = await res.json();
+      if (mountedRef && !mountedRef()) return;
+      setSelectedLead(data?.lead || null);
+      setSelectedAppointment(data?.appointment || null);
+    } catch {
+      if (!mountedRef || mountedRef()) {
+        setSelectedLead(null);
+        setSelectedAppointment(null);
+      }
+    }
+  }
+
   async function loadMessagesForSession(targetSessionId, { mountedRef = null } = {}) {
     if (!targetSessionId) return;
     setMessagesLoading(true);
@@ -738,6 +760,7 @@ export default function App() {
       if (mountedRef && !mountedRef()) return;
       setSelectedMessages(Array.isArray(data?.rows) ? data.rows : []);
       setSelectedSettings(data?.settings || { bot_enabled: 1, last_read_at: null });
+      await loadConversationAppointment(targetSessionId, { mountedRef });
       if (routeMode === "whatsapp") {
         scrollThreadToBottom();
       }
@@ -784,6 +807,33 @@ export default function App() {
     setManualReplyError("");
     setManualReplySuccess("");
     await markThreadAsRead(targetSessionId);
+  }
+
+  async function runAppointmentAction(action) {
+    if (!selectedSessionId || appointmentActionLoading) return;
+    setAppointmentActionError("");
+    setAppointmentActionSuccess("");
+    setAppointmentActionLoading(true);
+    try {
+      const encoded = encodeURIComponent(selectedSessionId);
+      const res = await fetch(`${CONVERSATIONS_API_URL}/${encoded}/appointment/action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "No se pudo ejecutar accion de cita");
+
+      setSelectedLead(data?.lead || null);
+      setSelectedAppointment(data?.appointment || null);
+      setAppointmentActionSuccess("Cita actualizada.");
+      await loadMessagesForSession(selectedSessionId);
+      await loadConversations({ keepSelection: true });
+    } catch (error) {
+      setAppointmentActionError(error?.message || "No se pudo actualizar cita.");
+    } finally {
+      setAppointmentActionLoading(false);
+    }
   }
 
   async function toggleBotForSelectedContact() {
@@ -1304,6 +1354,41 @@ export default function App() {
                       </button>
                     </div>
                   ) : null}
+                  {selectedAppointment ? (
+                    <div className="thread-actions">
+                      <span className="subtle">
+                        Cita: {formatTimestamp(selectedAppointment.scheduled_at)} / Estado: {selectedAppointment.status}
+                      </span>
+                      <button
+                        type="button"
+                        className="secondary-btn"
+                        onClick={() => runAppointmentAction("confirm")}
+                        disabled={appointmentActionLoading || String(selectedAppointment.status || "").toUpperCase() === "CONFIRMED"}
+                      >
+                        Confirmar cita
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-btn"
+                        onClick={() => runAppointmentAction("reschedule")}
+                        disabled={appointmentActionLoading}
+                      >
+                        Reprogramar
+                      </button>
+                      <button
+                        type="button"
+                        className="danger-btn"
+                        onClick={() => runAppointmentAction("cancel")}
+                        disabled={appointmentActionLoading}
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  ) : selectedLead ? (
+                    <p className="subtle">Lead sin cita activa.</p>
+                  ) : null}
+                  {appointmentActionError ? <p className="error-text">{appointmentActionError}</p> : null}
+                  {appointmentActionSuccess ? <p className="subtle">{appointmentActionSuccess}</p> : null}
                 </div>
                 {messagesError ? <p className="error-text">{messagesError}</p> : null}
                 <div className="thread-messages" ref={threadMessagesRef}>

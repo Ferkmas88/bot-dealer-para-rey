@@ -5,6 +5,7 @@ import {
   createAppointment,
   deleteInventoryUnit,
   getAppointmentById,
+  getLatestOpenAppointmentForLead,
   getLeadBySessionId,
   getConversationSettings,
   getInventoryById,
@@ -73,6 +74,25 @@ const appointmentPatchSchema = z.object({
   confirmation_state: z.enum(["PROPOSED", "AWAITING_CONFIRMATION", "CONFIRMED", "RESCHEDULE_REQUESTED", "CANCELLED"]).optional(),
   proposal_options: z.array(z.string().datetime()).optional()
 });
+
+const appointmentActionSchema = z.object({
+  action: z.enum(["confirm", "reschedule", "cancel"])
+});
+
+function buildNextAppointmentOptions() {
+  const now = new Date();
+  const option1 = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  option1.setHours(11, 0, 0, 0);
+  const option2 = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  option2.setHours(16, 0, 0, 0);
+  return [option1.toISOString(), option2.toISOString()];
+}
+
+function formatOptionLine(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("en-US", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
 
 export const dealerDbAdminRouter = Router();
 
@@ -265,6 +285,82 @@ dealerDbAdminRouter.post("/dealer/db/conversations/:sessionId/reply", async (req
     return res.status(500).json({
       ok: false,
       error: error?.message || "Failed to send manual reply"
+    });
+  }
+});
+
+dealerDbAdminRouter.get("/dealer/db/conversations/:sessionId/appointment", async (req, res) => {
+  const sessionId = req.params.sessionId;
+  const lead = await getLeadBySessionId(sessionId);
+  const appointment = await getLatestOpenAppointmentForLead(sessionId);
+  return res.json({ lead, appointment });
+});
+
+dealerDbAdminRouter.post("/dealer/db/conversations/:sessionId/appointment/action", async (req, res) => {
+  const sessionId = req.params.sessionId;
+  const parsed = appointmentActionSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid appointment action payload", details: parsed.error.flatten() });
+  }
+
+  const lead = await getLeadBySessionId(sessionId);
+  if (!lead) return res.status(404).json({ error: "Lead not found" });
+
+  const appointment = await getLatestOpenAppointmentForLead(sessionId);
+  if (!appointment) return res.status(404).json({ error: "No open appointment for this lead" });
+
+  try {
+    let updatedAppointment = appointment;
+    let outboundText = "";
+
+    if (parsed.data.action === "confirm") {
+      updatedAppointment = await updateAppointment(appointment.id, {
+        status: "CONFIRMED",
+        confirmation_state: "CONFIRMED",
+        confirmed_at: new Date().toISOString()
+      });
+      await updateLeadStatus(sessionId, "BOOKED");
+      outboundText = "Perfecto, tu cita quedo confirmada. Te esperamos.";
+      await sendAppointmentConfirmedOwnerEmail({
+        to: process.env.OWNER_NOTIFICATION_EMAIL || "rey1309ltu@gmail.com",
+        appointment: updatedAppointment,
+        lead
+      });
+    } else if (parsed.data.action === "reschedule") {
+      const options = buildNextAppointmentOptions();
+      updatedAppointment = await updateAppointment(appointment.id, {
+        status: "RESCHEDULED",
+        confirmation_state: "AWAITING_CONFIRMATION",
+        proposal_options: options
+      });
+      await updateLeadStatus(sessionId, "APPT_PENDING");
+      outboundText = `Te comparto nuevos horarios:\n1) ${formatOptionLine(options[0])}\n2) ${formatOptionLine(options[1])}\nResponde 1 o 2.`;
+    } else {
+      updatedAppointment = await updateAppointment(appointment.id, {
+        status: "CANCELLED",
+        confirmation_state: "CANCELLED",
+        cancelled_at: new Date().toISOString()
+      });
+      await updateLeadStatus(sessionId, "NO_RESPONSE");
+      outboundText = "Cita cancelada. Cuando quieras reagendar, te ayudo con gusto.";
+    }
+
+    if (sessionId.startsWith("wa:")) {
+      await sendManualWhatsAppReply({ sessionId, body: outboundText });
+    }
+    await persistOutgoingAssistantMessage({
+      sessionId,
+      assistantMessage: outboundText,
+      source: "appointment-action",
+      intent: `appointment_${parsed.data.action}`
+    });
+
+    const updatedLead = await getLeadBySessionId(sessionId);
+    return res.json({ ok: true, appointment: updatedAppointment, lead: updatedLead });
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+      error: error?.message || "Failed to process appointment action"
     });
   }
 });

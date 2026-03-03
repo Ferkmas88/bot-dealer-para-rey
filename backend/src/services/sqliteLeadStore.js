@@ -1215,6 +1215,16 @@ function safeJsonParse(value) {
   }
 }
 
+function normalizeAppointmentRow(row) {
+  if (!row) return null;
+  return {
+    ...row,
+    proposal_options: Array.isArray(row.proposal_options)
+      ? row.proposal_options
+      : safeJsonParse(row.proposal_options)
+  };
+}
+
 export async function createAppointment({
   leadSessionId,
   scheduledAt,
@@ -1240,7 +1250,7 @@ export async function createAppointment({
       `,
       [leadSessionId, scheduledAt, vehicleId, normalizedStatus, confirmationState, proposalJson, notes, now, now]
     );
-    return result.rows?.[0] || null;
+    return normalizeAppointmentRow(result.rows?.[0] || null);
   }
 
   const insertRes = db
@@ -1254,7 +1264,9 @@ export async function createAppointment({
     )
     .run(leadSessionId, scheduledAt, vehicleId, normalizedStatus, confirmationState, proposalJson, notes, now, now);
 
-  return db.prepare(`SELECT * FROM appointments WHERE id = ? LIMIT 1`).get(Number(insertRes.lastInsertRowid)) || null;
+  return normalizeAppointmentRow(
+    db.prepare(`SELECT * FROM appointments WHERE id = ? LIMIT 1`).get(Number(insertRes.lastInsertRowid)) || null
+  );
 }
 
 export async function getAppointmentById(id) {
@@ -1263,9 +1275,9 @@ export async function getAppointmentById(id) {
   if (usePgInventory && pgPool) {
     await pgMessagingReady;
     const result = await pgPool.query(`SELECT * FROM appointments WHERE id = $1 LIMIT 1`, [safeId]);
-    return result.rows?.[0] || null;
+    return normalizeAppointmentRow(result.rows?.[0] || null);
   }
-  return db.prepare(`SELECT * FROM appointments WHERE id = ? LIMIT 1`).get(safeId) || null;
+  return normalizeAppointmentRow(db.prepare(`SELECT * FROM appointments WHERE id = ? LIMIT 1`).get(safeId) || null);
 }
 
 export async function listAppointments({ from = null, to = null, status = "", limit = 500 } = {}) {
@@ -1302,10 +1314,7 @@ export async function listAppointments({ from = null, to = null, status = "", li
       `,
       params
     );
-    return (result.rows || []).map((row) => ({
-      ...row,
-      proposal_options: Array.isArray(row.proposal_options) ? row.proposal_options : []
-    }));
+    return (result.rows || []).map((row) => normalizeAppointmentRow(row));
   }
 
   const where = [];
@@ -1337,10 +1346,7 @@ export async function listAppointments({ from = null, to = null, status = "", li
     )
     .all(...params);
 
-  return rows.map((row) => ({
-    ...row,
-    proposal_options: safeJsonParse(row.proposal_options)
-  }));
+  return rows.map((row) => normalizeAppointmentRow(row));
 }
 
 export async function updateAppointment(id, patch = {}) {
@@ -1386,7 +1392,7 @@ export async function updateAppointment(id, patch = {}) {
         Number(id)
       ]
     );
-    return result.rows?.[0] || null;
+    return normalizeAppointmentRow(result.rows?.[0] || null);
   }
 
   db
@@ -1471,10 +1477,10 @@ export async function getLatestOpenAppointmentForLead(leadSessionId) {
       `,
       [leadSessionId]
     );
-    return result.rows?.[0] || null;
+    return normalizeAppointmentRow(result.rows?.[0] || null);
   }
 
-  return (
+  return normalizeAppointmentRow(
     db
       .prepare(
         `
