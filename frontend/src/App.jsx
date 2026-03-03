@@ -1735,61 +1735,13 @@ export default function App() {
                       Lead: {String(selectedLead.status || selectedThread?.lead_status || "NEW").toUpperCase()} / {String(selectedLead.mode || selectedThread?.lead_mode || "BOT").toUpperCase()} / {String(selectedLead.priority || selectedThread?.lead_priority || "NORMAL").toUpperCase()}
                     </p>
                   ) : null}
-                  {selectedSessionId ? (
-                    <div className="thread-actions">
-                      <button type="button" className="secondary-btn" onClick={toggleBotForSelectedContact} disabled={botUpdating}>
-                        {botUpdating ? "Guardando..." : Number(selectedSettings?.bot_enabled ?? 1) === 1 ? "Bot ON (clic para OFF)" : "Bot OFF (clic para ON)"}
-                      </button>
-                      <button
-                        type="button"
-                        className="secondary-btn"
-                        onClick={takeLeadAsHuman}
-                        disabled={leadActionLoading || String(selectedLead?.mode || selectedThread?.lead_mode || "BOT").toUpperCase() === "HUMAN"}
-                      >
-                        {leadActionLoading ? "Aplicando..." : "Tomar HUMANO"}
-                      </button>
-                      <button type="button" className="secondary-btn" onClick={() => markThreadAsRead(selectedSessionId)}>
-                        Marcar leido
-                      </button>
-                    </div>
-                  ) : null}
                   {selectedAppointment ? (
-                    <div className="thread-actions">
-                      <span className="subtle">
-                        Cita: {formatTimestamp(selectedAppointment.scheduled_at)} / Estado: {selectedAppointment.status}
-                      </span>
-                      <button
-                        type="button"
-                        className="secondary-btn"
-                        onClick={() => runAppointmentAction("confirm")}
-                        disabled={appointmentActionLoading || String(selectedAppointment.status || "").toUpperCase() === "CONFIRMED"}
-                      >
-                        Confirmar cita
-                      </button>
-                      <button
-                        type="button"
-                        className="secondary-btn"
-                        onClick={() => runAppointmentAction("reschedule")}
-                        disabled={appointmentActionLoading}
-                      >
-                        Reprogramar
-                      </button>
-                      <button
-                        type="button"
-                        className="danger-btn"
-                        onClick={() => runAppointmentAction("cancel")}
-                        disabled={appointmentActionLoading}
-                      >
-                        Cancelar
-                      </button>
-                    </div>
+                    <p className="subtle">
+                      Cita: {formatTimestamp(selectedAppointment.scheduled_at)} / Estado: {selectedAppointment.status}
+                    </p>
                   ) : selectedLead ? (
                     <p className="subtle">Lead sin cita activa.</p>
                   ) : null}
-                  {appointmentActionError ? <p className="error-text">{appointmentActionError}</p> : null}
-                  {appointmentActionSuccess ? <p className="subtle">{appointmentActionSuccess}</p> : null}
-                  {leadActionError ? <p className="error-text">{leadActionError}</p> : null}
-                  {leadActionSuccess ? <p className="subtle">{leadActionSuccess}</p> : null}
                 </div>
                 {messagesError ? <p className="error-text">{messagesError}</p> : null}
                 <div className="thread-messages" ref={threadMessagesRef}>
