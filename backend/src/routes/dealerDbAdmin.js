@@ -453,11 +453,11 @@ dealerDbAdminRouter.post("/dealer/db/conversations/:sessionId/appointment/action
       const options = buildNextAppointmentOptions();
       updatedAppointment = await updateAppointment(appointment.id, {
         status: "RESCHEDULED",
-        confirmation_state: "AWAITING_CONFIRMATION",
+        confirmation_state: "PROPOSED",
         proposal_options: options
       });
       await updateLeadStatus(sessionId, "APPT_PENDING");
-      outboundText = `Te comparto nuevos horarios:\n1) ${formatOptionLine(options[0])}\n2) ${formatOptionLine(options[1])}\nResponde 1 o 2.`;
+      outboundText = `Te comparto nuevos horarios:\n1) ${formatOptionLine(options[0])}\n2) ${formatOptionLine(options[1])}\nElige 1 o 2 y luego te pido confirmacion final.`;
     } else {
       updatedAppointment = await updateAppointment(appointment.id, {
         status: "CANCELLED",
