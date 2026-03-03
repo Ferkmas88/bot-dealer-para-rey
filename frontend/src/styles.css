@@ -228,6 +228,30 @@ h2 {
   min-height: 720px;
 }
 
+.appointments-side-list {
+  margin-top: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: #101010;
+  padding: 8px;
+  max-height: 420px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: grid;
+  gap: 8px;
+}
+
+.appointments-side-item {
+  border: 1px solid #4a3814;
+  border-radius: 8px;
+  background: #18140b;
+  padding: 8px;
+}
+
+.appointments-side-item p {
+  margin: 2px 0;
+}
+
 .session {
   display: block;
   margin-bottom: 8px;

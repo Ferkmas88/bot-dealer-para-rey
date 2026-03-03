@@ -187,6 +187,7 @@ export default function App() {
   const [editingId, setEditingId] = useState(null);
 
   const [appointmentsRows, setAppointmentsRows] = useState([]);
+  const [upcomingAppointmentsRows, setUpcomingAppointmentsRows] = useState([]);
   const [appointmentsLoading, setAppointmentsLoading] = useState(false);
   const [appointmentsError, setAppointmentsError] = useState("");
   const [appointmentsMenuFilter, setAppointmentsMenuFilter] = useState("today");
@@ -272,6 +273,7 @@ export default function App() {
   useEffect(() => {
     if (isAuthenticated && routeMode === "admin" && adminView === "appointments") {
       loadAppointments();
+      loadUpcomingAppointments();
       loadLeads();
     }
   }, [isAuthenticated, routeMode, adminView, appointmentsMenuFilter]);
@@ -643,6 +645,25 @@ export default function App() {
     }
   }
 
+  async function loadUpcomingAppointments() {
+    try {
+      const params = new URLSearchParams({ limit: "500" });
+      params.set("from", new Date().toISOString());
+      const res = await fetch(`${APPOINTMENTS_API_URL}?${params.toString()}`);
+      const data = await res.json();
+      const rows = Array.isArray(data?.rows) ? data.rows : [];
+      const sorted = rows
+        .filter((row) => {
+          const status = String(row?.status || "").toUpperCase();
+          return status !== "CANCELLED" && status !== "COMPLETED" && status !== "NO_SHOW";
+        })
+        .sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime());
+      setUpcomingAppointmentsRows(sorted);
+    } catch {
+      setUpcomingAppointmentsRows([]);
+    }
+  }
+
   async function saveAppointment(e) {
     e.preventDefault();
     if (savingAppointment) return;
@@ -670,6 +691,7 @@ export default function App() {
 
       setAppointmentForm({ lead_session_id: "", scheduled_at: "", notes: "" });
       await loadAppointments();
+      await loadUpcomingAppointments();
     } catch {
       setAppointmentsError("No pude crear la cita.");
     } finally {
@@ -684,6 +706,7 @@ export default function App() {
       const res = await fetch(`${APPOINTMENTS_API_URL}/${id}/confirm`, { method: "POST" });
       if (!res.ok) throw new Error("request failed");
       await loadAppointments();
+      await loadUpcomingAppointments();
     } catch {
       setAppointmentsError("No pude confirmar la cita.");
     }
@@ -1377,8 +1400,22 @@ export default function App() {
                 <h2>Resumen</h2>
               </div>
               <p className="subtle">Citas visibles: {appointmentsRows.length}</p>
+              <p className="subtle">Proximas: {upcomingAppointmentsRows.length}</p>
               <p className="subtle">Leads cargados: {leadRows.length}</p>
               <p className="subtle">Al confirmar una cita se envia correo automatico al dueno.</p>
+              <div className="appointments-side-list">
+                {upcomingAppointmentsRows.map((row) => (
+                  <article key={`upcoming-${row.id}`} className="appointments-side-item">
+                    <p>
+                      <strong>{formatTimestamp(row.scheduled_at)}</strong>
+                    </p>
+                    <p>{row.lead_name || row.lead_session_id}</p>
+                    <p className="subtle">{row.lead_phone || "-"}</p>
+                    <p className="subtle">Estado: {row.status}</p>
+                  </article>
+                ))}
+                {!upcomingAppointmentsRows.length ? <p className="subtle">No hay citas proximas.</p> : null}
+              </div>
             </aside>
           </section>
           )
