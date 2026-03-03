@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    { "source": "/admin", "destination": "/index.html" },
+    { "source": "/admin/whatsapp", "destination": "/index.html" },
+    { "source": "/admin/whatpp", "destination": "/index.html" },
+    { "source": "/wsp", "destination": "/index.html" }
+  ]
+}
