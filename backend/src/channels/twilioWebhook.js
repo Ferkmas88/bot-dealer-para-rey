@@ -155,6 +155,34 @@ function parseRequestedDateTime(text) {
   return date.toISOString();
 }
 
+function parseRequestedDay(text) {
+  const raw = String(text || "").toLowerCase();
+  if (/hoy|today/.test(raw)) return "hoy";
+  if (/manana|mañana|tomorrow/.test(raw)) return "manana";
+  return null;
+}
+
+function parseRequestedTime(text) {
+  const raw = String(text || "").toLowerCase();
+  const timeMatch = raw.match(/\b([0-1]?\d)(?::([0-5]\d))?\s*(am|pm)\b/);
+  if (!timeMatch) return null;
+  const hour12 = Number(timeMatch[1]);
+  if (!Number.isFinite(hour12) || hour12 < 1 || hour12 > 12) return null;
+  const minute = Number(timeMatch[2] || "0");
+  const meridiem = timeMatch[3];
+  let hour24 = hour12 % 12;
+  if (meridiem === "pm") hour24 += 12;
+  return { hour24, minute };
+}
+
+function composeIsoFromDayAndTime(day, time) {
+  if (!day || !time) return null;
+  const date = new Date();
+  if (day === "manana") date.setDate(date.getDate() + 1);
+  date.setHours(time.hour24, time.minute, 0, 0);
+  return date.toISOString();
+}
+
 function isOneChoice(text) {
   return /^\s*1\s*$/.test(text) || /^(opcion|option)\s*1\b/i.test(text);
 }
@@ -200,10 +228,19 @@ function asksOwnAppointment(text) {
   );
 }
 
-async function handleAppointmentFlow({ sessionId, incomingText }) {
+async function handleAppointmentFlow({ sessionId, incomingText, lead = null }) {
   const text = String(incomingText || "").trim().toLowerCase();
   const openAppt = await getLatestOpenAppointmentForLead(sessionId);
-  const requestedAt = parseRequestedDateTime(text);
+  let requestedAt = parseRequestedDateTime(text);
+  const dayOnly = parseRequestedDay(text);
+  const timeOnly = parseRequestedTime(text);
+  if (!requestedAt && dayOnly && timeOnly) {
+    requestedAt = composeIsoFromDayAndTime(dayOnly, timeOnly);
+  } else if (!requestedAt && dayOnly && !timeOnly) {
+    await upsertLeadProfile({ sessionId, datePref: dayOnly, lastMessageAt: new Date().toISOString() });
+  } else if (!requestedAt && !dayOnly && timeOnly && lead?.date_pref) {
+    requestedAt = composeIsoFromDayAndTime(String(lead.date_pref || "").toLowerCase(), timeOnly);
+  }
   const providedName = extractLooseCustomerName(incomingText);
 
   if (openAppt && isCancelAction(text)) {
@@ -222,26 +259,40 @@ async function handleAppointmentFlow({ sessionId, incomingText }) {
   if (openAppt && isOneChoice(text) && openAppt.confirmation_state === "PROPOSED") {
     const options = Array.isArray(openAppt.proposal_options) ? openAppt.proposal_options : [];
     const selectedAt = options[0] || openAppt.scheduled_at;
-    await updateAppointment(openAppt.id, {
+    const confirmed = await updateAppointment(openAppt.id, {
       scheduled_at: selectedAt,
-      status: "PENDING",
-      confirmation_state: "AWAITING_CONFIRMATION"
+      status: "CONFIRMED",
+      confirmation_state: "CONFIRMED",
+      confirmed_at: new Date().toISOString()
+    });
+    const leadRow = await updateLeadStatus(sessionId, "BOOKED");
+    await sendAppointmentConfirmedOwnerEmail({
+      to: process.env.OWNER_NOTIFICATION_EMAIL || "ferkmas88@gmail.com",
+      appointment: confirmed,
+      lead: leadRow
     });
     return {
       handled: true,
-      reply: `Resumen de tu cita:\nFecha/Hora: ${formatOptionLine(selectedAt)}\nResponde:\n1 confirmar\n2 cambiar`
+      reply: `Listo, tu cita quedo confirmada para ${formatOptionLine(selectedAt)}. Si quieres cambiarla, dime reprogramar.`
     };
   }
 
   if (openAppt && requestedAt && openAppt.confirmation_state === "PROPOSED") {
-    await updateAppointment(openAppt.id, {
+    const confirmed = await updateAppointment(openAppt.id, {
       scheduled_at: requestedAt,
-      status: "PENDING",
-      confirmation_state: "AWAITING_CONFIRMATION"
+      status: "CONFIRMED",
+      confirmation_state: "CONFIRMED",
+      confirmed_at: new Date().toISOString()
+    });
+    const leadRow = await updateLeadStatus(sessionId, "BOOKED");
+    await sendAppointmentConfirmedOwnerEmail({
+      to: process.env.OWNER_NOTIFICATION_EMAIL || "ferkmas88@gmail.com",
+      appointment: confirmed,
+      lead: leadRow
     });
     return {
       handled: true,
-      reply: `Si, tengo disponibilidad para ${formatOptionLine(requestedAt)}.\nResumen de tu cita:\nFecha/Hora: ${formatOptionLine(requestedAt)}\nResponde:\n1 confirmar\n2 cambiar`
+      reply: `Perfecto, tu cita quedo confirmada para ${formatOptionLine(requestedAt)}.`
     };
   }
 
@@ -255,7 +306,7 @@ async function handleAppointmentFlow({ sessionId, incomingText }) {
     });
     return {
       handled: true,
-      reply: `Resumen de tu cita:\nFecha/Hora: ${formatOptionLine(selectedAt)}\nResponde:\n1 confirmar\n2 cambiar`
+      reply: `Perfecto, la movi a ${formatOptionLine(selectedAt)}. Si quieres otro horario, dime reprogramar.`
     };
   }
 
@@ -286,14 +337,14 @@ async function handleAppointmentFlow({ sessionId, incomingText }) {
     if (openAppt.confirmation_state === "AWAITING_CONFIRMATION") {
       return {
         handled: true,
-        reply: `Perfecto, ${providedName}. Ya tengo tu nombre.\nPara confirmar tu cita de ${formatOptionLine(openAppt.scheduled_at)}, responde 1 confirmar.`
+        reply: `Perfecto, ${providedName}. Ya tengo tu nombre.\nTu cita sigue para ${formatOptionLine(openAppt.scheduled_at)}.`
       };
     }
     if (openAppt.confirmation_state === "PROPOSED") {
       const options = Array.isArray(openAppt.proposal_options) ? openAppt.proposal_options : [];
       return {
         handled: true,
-        reply: `Gracias, ${providedName}. Ahora dime para cuando quieres la cita (ejemplo: hoy 4pm), o elige:\n1) ${formatOptionLine(options[0] || openAppt.scheduled_at)}\n2) ${formatOptionLine(options[1] || openAppt.scheduled_at)}`
+        reply: `Gracias, ${providedName}. Ahora dime dia y hora exacta para agendar (ejemplo: hoy 4pm). Horarios sugeridos: ${formatOptionLine(options[0] || openAppt.scheduled_at)} o ${formatOptionLine(options[1] || openAppt.scheduled_at)}.`
       };
     }
   }
@@ -307,7 +358,7 @@ async function handleAppointmentFlow({ sessionId, incomingText }) {
     });
     return {
       handled: true,
-      reply: `Claro, te doy dos horarios nuevos:\n1) ${formatOptionLine(options[0])}\n2) ${formatOptionLine(options[1])}\nElige 1 o 2 y luego te pido confirmacion final.`
+      reply: `Claro, te doy horarios nuevos: ${formatOptionLine(options[0])} o ${formatOptionLine(options[1])}. Dime cual te funciona y te la dejo lista.`
     };
   }
 
@@ -330,7 +381,7 @@ async function handleAppointmentFlow({ sessionId, incomingText }) {
     if (!requestedAt) {
       return {
         handled: true,
-        reply: "Claro. Para cuando quieres la cita? Dime dia y hora (por ejemplo: hoy 4pm o manana 11am)."
+        reply: "Claro. Para cuando quieres la cita? Dime dia y hora exacta (por ejemplo: hoy 4pm o manana 11am)."
       };
     }
     const options = buildNextAppointmentOptions();
@@ -338,14 +389,28 @@ async function handleAppointmentFlow({ sessionId, incomingText }) {
     await createAppointment({
       lead_session_id: sessionId,
       scheduled_at: initialAt,
-      status: "PENDING",
-      confirmation_state: "AWAITING_CONFIRMATION",
+      status: "CONFIRMED",
+      confirmation_state: "CONFIRMED",
+      confirmed_at: new Date().toISOString(),
       proposal_options: options
     });
-    await updateLeadStatus(sessionId, "APPT_PENDING");
+    const leadRow = await updateLeadStatus(sessionId, "BOOKED");
+    const confirmed = await getLatestOpenAppointmentForLead(sessionId);
+    await sendAppointmentConfirmedOwnerEmail({
+      to: process.env.OWNER_NOTIFICATION_EMAIL || "ferkmas88@gmail.com",
+      appointment: confirmed,
+      lead: leadRow
+    });
     return {
       handled: true,
-      reply: `Perfecto, si tengo disponibilidad para ${formatOptionLine(requestedAt)}.\nResumen de tu cita:\nFecha/Hora: ${formatOptionLine(requestedAt)}\nResponde:\n1 confirmar\n2 cambiar`
+      reply: `Perfecto, te agende para ${formatOptionLine(requestedAt)}. Si quieres cambiar el horario, dime reprogramar.`
+    };
+  }
+
+  if (!openAppt && dayOnly && !timeOnly) {
+    return {
+      handled: true,
+      reply: `Perfecto. Te ayudo para ${dayOnly}. Que hora exacta te funciona? (ejemplo: 11am, 2pm o 4pm)`
     };
   }
 
@@ -469,7 +534,7 @@ twilioWebhookRouter.post("/whatsapp", async (req, res) => {
       return res.type("text/xml").send(twiml.toString());
     }
 
-    const appointmentFlow = await handleAppointmentFlow({ sessionId, incomingText });
+    const appointmentFlow = await handleAppointmentFlow({ sessionId, incomingText, lead: existingLead });
     if (appointmentFlow.handled) {
       await persistIncomingUserMessage({
         sessionId,

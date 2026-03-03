@@ -167,6 +167,10 @@ function extractAppointmentSlot(text) {
   return day || time;
 }
 
+function slotHasExplicitTime(slot) {
+  return /\b([0-1]?\d)(?::([0-5]\d))?\s*(am|pm)\b/i.test(String(slot || ""));
+}
+
 function hasAppointmentSignal(text) {
   return /(agendar|agenda|cita|appointment|apointment|apoiment|test drive|prueba de manejo|hoy|manana|mañana|lunes|martes|miercoles|miércoles|jueves|viernes|sabado|sábado|domingo|\b[0-1]?\d(?::[0-5]\d)?\s*(am|pm)\b)/i.test(
     text || ""
@@ -1202,8 +1206,21 @@ export async function processDealerSessionMessageWithLLM(message, context = {}, 
       };
     }
 
+    if (!slotHasExplicitTime(appointmentSlot)) {
+      return {
+        reply: `Gracias, ${customerName}. Me falta la hora exacta para agendar. Que hora te funciona ${appointmentSlot}? (ejemplo: 11am, 2pm o 4pm)`,
+        intent,
+        entities,
+        suggestions: buildSuggestions(intent, entities, safeMessage),
+        skill,
+        source: "appointment-fastpath",
+        mediaUrl: null,
+        updatedContext
+      };
+    }
+
     return {
-      reply: `Perfecto 🔥\nTe agendo para ${appointmentSlot}.\nNombre: ${customerName}\nTe esperamos en el lote.\nSi necesitas direccion o cambiar horario, me dices.`,
+      reply: `Perfecto 🔥\nTengo tu cita para ${appointmentSlot}.\nNombre: ${customerName}\nTe esperamos en el lote.\nSi necesitas direccion o cambiar horario, me dices.`,
       intent,
       entities,
       suggestions: buildSuggestions(intent, entities, safeMessage),
