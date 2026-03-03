@@ -30,7 +30,7 @@ import {
 import { sendManualWhatsAppReply } from "../services/twilioSender.js";
 import { sendMetaWhatsAppText } from "../services/metaSender.js";
 import { getPushPublicConfig, getPushRuntimeStatus, sendTestPush } from "../services/pushNotifications.js";
-import { sendAppointmentConfirmedOwnerEmail } from "../services/ownerNotifications.js";
+import { sendAppointmentConfirmedOwnerEmail, sendOwnerTestEmail } from "../services/ownerNotifications.js";
 
 const inventoryPayloadSchema = z.object({
   make: z.string().min(1),
@@ -292,13 +292,13 @@ dealerDbAdminRouter.post("/dealer/db/appointments/:id/confirm", async (req, res)
   });
 
   const lead = await updateLeadStatus(appointment.lead_session_id, "BOOKED");
-  await sendAppointmentConfirmedOwnerEmail({
+  const emailResult = await sendAppointmentConfirmedOwnerEmail({
     to: process.env.OWNER_NOTIFICATION_EMAIL || "ferkmas88@gmail.com",
     appointment: updatedAppointment,
     lead
   });
 
-  return res.json({ ok: true, row: updatedAppointment, lead });
+  return res.json({ ok: true, row: updatedAppointment, lead, email: emailResult });
 });
 
 dealerDbAdminRouter.get("/dealer/db/conversations", async (req, res) => {
@@ -444,11 +444,14 @@ dealerDbAdminRouter.post("/dealer/db/conversations/:sessionId/appointment/action
       });
       await updateLeadStatus(sessionId, "BOOKED");
       outboundText = "Perfecto, tu cita quedo confirmada. Te esperamos.";
-      await sendAppointmentConfirmedOwnerEmail({
+      const emailResult = await sendAppointmentConfirmedOwnerEmail({
         to: process.env.OWNER_NOTIFICATION_EMAIL || "ferkmas88@gmail.com",
         appointment: updatedAppointment,
         lead
       });
+      if (!emailResult?.ok) {
+        console.error("Appointment confirm email failed:", emailResult?.reason || "unknown");
+      }
     } else if (parsed.data.action === "reschedule") {
       const options = buildNextAppointmentOptions();
       updatedAppointment = await updateAppointment(appointment.id, {
@@ -488,6 +491,15 @@ dealerDbAdminRouter.post("/dealer/db/conversations/:sessionId/appointment/action
       error: error?.message || "Failed to process appointment action"
     });
   }
+});
+
+dealerDbAdminRouter.post("/dealer/db/notifications/owner-email/test", async (_req, res) => {
+  const to = process.env.OWNER_NOTIFICATION_EMAIL || "ferkmas88@gmail.com";
+  const result = await sendOwnerTestEmail({ to });
+  if (!result.ok) {
+    return res.status(500).json({ ok: false, to, error: result.reason || "Email test failed" });
+  }
+  return res.json({ ok: true, to, id: result.id || null });
 });
 
 dealerDbAdminRouter.get("/dealer/push/config", (_req, res) => {

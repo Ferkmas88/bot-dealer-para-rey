@@ -86,7 +86,17 @@ async function sendViaResend({ to, subject, html }) {
     return { ok: false, reason: `Resend error ${response.status}: ${reason}` };
   }
 
-  return { ok: true };
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+
+  return {
+    ok: true,
+    id: payload?.id || null
+  };
 }
 
 export async function sendAppointmentConfirmedOwnerEmail({ to, appointment, lead }) {
@@ -114,5 +124,22 @@ export async function sendHotLeadHandoffOwnerEmail({ to, lead, lastMessage = "",
     console.error("Owner hot lead email failed:", result.reason);
   }
 
+  return result;
+}
+
+export async function sendOwnerTestEmail({ to }) {
+  if (!to) return { ok: false, reason: "Owner email missing" };
+  const subject = "Prueba de correo - Empire Rey";
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111">
+      <h2>Prueba de correo</h2>
+      <p>Este es un correo de prueba de notificaciones de citas.</p>
+      <p><strong>Fecha:</strong> ${new Date().toLocaleString("en-US")}</p>
+    </div>
+  `;
+  const result = await sendViaResend({ to, subject, html });
+  if (!result.ok) {
+    console.error("Owner test email failed:", result.reason);
+  }
   return result;
 }
