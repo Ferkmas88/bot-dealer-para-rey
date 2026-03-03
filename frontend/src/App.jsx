@@ -20,6 +20,7 @@ const AUTH_STORAGE_KEY = "dealer-panel-auth";
 const AUTH_PERSIST_STORAGE_KEY = "dealer-panel-auth-persist-v1";
 const AUTH_PERSIST_TTL_MS = 1000 * 60 * 60 * 24 * 30;
 const INBOX_SEEN_STORAGE_KEY = "dealer-inbox-seen-counts-v1";
+const CONTACT_NAME_MAP_STORAGE_KEY = "dealer-contact-name-map-v1";
 const INBOX_BADGE_POLL_MS = 4000;
 const INBOX_LIST_POLL_MS = 3000;
 const INBOX_MESSAGES_POLL_MS = 2000;
@@ -57,9 +58,36 @@ function formatSessionLabel(sessionId) {
   return sessionId;
 }
 
-function formatConversationDisplayName(row) {
+function findContactNameByDigits(contactNameMap, rawValue) {
+  const digits = normalizePhoneDigits(rawValue);
+  if (!digits) return "";
+
+  const direct = String(contactNameMap?.[digits] || "").trim();
+  if (direct) return direct;
+
+  const entries = Object.entries(contactNameMap || {});
+  let bestMatch = "";
+  let bestLength = 0;
+  for (const [knownDigits, name] of entries) {
+    const candidateName = String(name || "").trim();
+    if (!knownDigits || !candidateName) continue;
+    if (digits.includes(knownDigits) || knownDigits.includes(digits)) {
+      if (knownDigits.length > bestLength) {
+        bestLength = knownDigits.length;
+        bestMatch = candidateName;
+      }
+    }
+  }
+  return bestMatch;
+}
+
+function formatConversationDisplayName(row, contactNameMap = {}) {
   const name = String(row?.lead_name || "").trim();
   if (name) return name;
+  const mappedByPhone = findContactNameByDigits(contactNameMap, row?.lead_phone || "");
+  if (mappedByPhone) return mappedByPhone;
+  const mappedBySession = findContactNameByDigits(contactNameMap, row?.session_id || "");
+  if (mappedBySession) return mappedBySession;
   return formatSessionLabel(row?.session_id || "");
 }
 
@@ -106,6 +134,25 @@ function loadSeenCounts() {
 function saveSeenCounts(value) {
   try {
     localStorage.setItem(INBOX_SEEN_STORAGE_KEY, JSON.stringify(value || {}));
+  } catch {
+    // noop
+  }
+}
+
+function loadContactNameMap() {
+  try {
+    const raw = localStorage.getItem(CONTACT_NAME_MAP_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveContactNameMap(value) {
+  try {
+    localStorage.setItem(CONTACT_NAME_MAP_STORAGE_KEY, JSON.stringify(value || {}));
   } catch {
     // noop
   }
@@ -227,6 +274,7 @@ export default function App() {
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [messagesError, setMessagesError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [contactNameMap, setContactNameMap] = useState(loadContactNameMap);
   const [contactPickerLoading, setContactPickerLoading] = useState(false);
   const [contactPickerError, setContactPickerError] = useState("");
   const [contactPickerSuccess, setContactPickerSuccess] = useState("");
@@ -246,7 +294,14 @@ export default function App() {
     "serviceWorker" in navigator &&
     "PushManager" in window;
   const contactPickerSupported =
-    typeof window !== "undefined" && "contacts" in navigator && "ContactsManager" in window;
+    typeof window !== "undefined" &&
+    typeof navigator !== "undefined" &&
+    "contacts" in navigator &&
+    typeof navigator.contacts?.select === "function";
+
+  useEffect(() => {
+    saveContactNameMap(contactNameMap);
+  }, [contactNameMap]);
 
   const kpis = useMemo(() => {
     const total = inventoryRows.length;
@@ -1030,38 +1085,56 @@ export default function App() {
 
     setContactPickerLoading(true);
     try {
-      const picked = await navigator.contacts.select(["name", "tel"], { multiple: false });
+      const picked = await navigator.contacts.select(["name", "tel"], { multiple: true });
       if (!Array.isArray(picked) || !picked.length) {
         setContactPickerSuccess("No seleccionaste contacto.");
         return;
       }
-      const contact = picked[0] || {};
-      const contactName = String(contact?.name?.[0] || "").trim();
-      const contactTel = String(contact?.tel?.[0] || "").trim();
-      const contactDigits = normalizePhoneDigits(contactTel);
-      if (!contactDigits) {
-        setContactPickerError("El contacto seleccionado no tiene telefono.");
+
+      const nextMap = { ...contactNameMap };
+      let synced = 0;
+      let firstValidContact = null;
+
+      for (const contact of picked) {
+        const contactName = String(contact?.name?.[0] || "").trim();
+        const tels = Array.isArray(contact?.tel) ? contact.tel : [];
+        if (!contactName || !tels.length) continue;
+        for (const tel of tels) {
+          const digits = normalizePhoneDigits(tel);
+          if (!digits) continue;
+          nextMap[digits] = contactName;
+          if (!firstValidContact) {
+            firstValidContact = { contactName, tel: String(tel || ""), digits };
+          }
+          synced += 1;
+        }
+      }
+
+      if (!synced) {
+        setContactPickerError("Los contactos elegidos no tienen nombre y telefono valido.");
         return;
       }
+      setContactNameMap(nextMap);
 
-      const match = conversationRows.find((row) => {
-        const sessionDigits = normalizePhoneDigits(row?.session_id || "");
-        const leadDigits = normalizePhoneDigits(row?.lead_phone || "");
-        return (
-          sessionDigits.includes(contactDigits) ||
-          contactDigits.includes(sessionDigits) ||
-          leadDigits.includes(contactDigits) ||
-          contactDigits.includes(leadDigits)
-        );
-      });
-
-      setSearchQuery(contactName || contactTel || contactDigits);
-      if (match?.session_id) {
-        await handleSelectConversation(match.session_id);
-        setContactPickerSuccess(`Abri chat de ${contactName || contactTel}.`);
-      } else {
-        setContactPickerError("Ese contacto aun no tiene chat en WhatsApp.");
+      const primaryDigits = firstValidContact?.digits || "";
+      const primaryLabel = firstValidContact?.contactName || firstValidContact?.tel || "";
+      if (primaryDigits) {
+        const match = conversationRows.find((row) => {
+          const sessionDigits = normalizePhoneDigits(row?.session_id || "");
+          const leadDigits = normalizePhoneDigits(row?.lead_phone || "");
+          return (
+            sessionDigits.includes(primaryDigits) ||
+            primaryDigits.includes(sessionDigits) ||
+            leadDigits.includes(primaryDigits) ||
+            primaryDigits.includes(leadDigits)
+          );
+        });
+        setSearchQuery(primaryLabel || primaryDigits);
+        if (match?.session_id) {
+          await handleSelectConversation(match.session_id);
+        }
       }
+      setContactPickerSuccess(`Sincronizados ${synced} telefonos de contactos.`);
     } catch (error) {
       if (String(error?.name || "") === "AbortError") {
         setContactPickerSuccess("Seleccion de contacto cancelada.");
@@ -1519,7 +1592,7 @@ export default function App() {
                 </div>
                 <input
                   className="thread-search"
-                  placeholder="Buscar numero o session..."
+                  placeholder="Buscar nombre, numero o session..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
@@ -1529,7 +1602,7 @@ export default function App() {
                   onClick={pickPhoneContact}
                   disabled={contactPickerLoading}
                 >
-                  {contactPickerLoading ? "Abriendo contactos..." : "Buscar en contactos del telefono"}
+                  {contactPickerLoading ? "Abriendo contactos..." : "Sincronizar nombres del telefono"}
                 </button>
                 {contactPickerError ? <p className="error-text">{contactPickerError}</p> : null}
                 {contactPickerSuccess ? <p className="subtle">{contactPickerSuccess}</p> : null}
@@ -1543,7 +1616,7 @@ export default function App() {
                       onClick={() => handleSelectConversation(row.session_id)}
                     >
                       <div className="thread-title">
-                        {formatConversationDisplayName(row)}
+                        {formatConversationDisplayName(row, contactNameMap)}
                         {Number(row.unread_count || 0) > 0 ? (
                           <span className="thread-unread">{row.unread_count}</span>
                         ) : null}
@@ -1570,7 +1643,7 @@ export default function App() {
                       Volver
                     </button>
                   ) : null}
-                  <h2>{selectedThread ? formatConversationDisplayName(selectedThread) : "Selecciona un chat"}</h2>
+                  <h2>{selectedThread ? formatConversationDisplayName(selectedThread, contactNameMap) : "Selecciona un chat"}</h2>
                   <p className="subtle">{selectedThread ? selectedThread.session_id : "Esperando seleccion..."}</p>
                   {selectedLead ? (
                     <p className="subtle">
