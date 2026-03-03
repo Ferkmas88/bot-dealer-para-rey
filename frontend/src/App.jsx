@@ -275,6 +275,12 @@ export default function App() {
   const [messagesError, setMessagesError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [contactNameMap, setContactNameMap] = useState(loadContactNameMap);
+  const [showAddContactForm, setShowAddContactForm] = useState(false);
+  const [newContactPhone, setNewContactPhone] = useState("");
+  const [newContactName, setNewContactName] = useState("");
+  const [addingContact, setAddingContact] = useState(false);
+  const [addContactError, setAddContactError] = useState("");
+  const [addContactSuccess, setAddContactSuccess] = useState("");
   const [contactPickerLoading, setContactPickerLoading] = useState(false);
   const [contactPickerError, setContactPickerError] = useState("");
   const [contactPickerSuccess, setContactPickerSuccess] = useState("");
@@ -1146,6 +1152,54 @@ export default function App() {
     }
   }
 
+  async function createNewContact(e) {
+    e.preventDefault();
+    if (addingContact) return;
+    const phone = String(newContactPhone || "").trim();
+    const name = String(newContactName || "").trim();
+    if (!phone) {
+      setAddContactError("Escribe un telefono valido.");
+      return;
+    }
+
+    setAddContactError("");
+    setAddContactSuccess("");
+    setAddingContact(true);
+    try {
+      const res = await fetch(`${CONVERSATIONS_API_URL}/create-contact`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phone,
+          name: name || undefined,
+          provider: "twilio"
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "No se pudo crear contacto.");
+
+      if (name) {
+        const digits = normalizePhoneDigits(phone);
+        if (digits) {
+          setContactNameMap((prev) => ({ ...prev, [digits]: name }));
+        }
+      }
+
+      setNewContactPhone("");
+      setNewContactName("");
+      setShowAddContactForm(false);
+      setAddContactSuccess("Contacto agregado.");
+      await loadConversations({ keepSelection: false });
+      if (data?.session_id) {
+        await handleSelectConversation(data.session_id);
+      }
+    } catch (error) {
+      setAddContactError(error?.message || "No pude agregar el contacto.");
+    } finally {
+      setAddingContact(false);
+    }
+  }
+
   function resetInventoryForm() {
     setInventoryForm(EMPTY_FORM);
     setEditingId(null);
@@ -1596,14 +1650,45 @@ export default function App() {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
-                <button
-                  type="button"
-                  className="secondary-btn thread-contact-picker-btn"
-                  onClick={pickPhoneContact}
-                  disabled={contactPickerLoading}
-                >
-                  {contactPickerLoading ? "Abriendo contactos..." : "Sincronizar nombres del telefono"}
-                </button>
+                <div className="thread-contact-actions">
+                  <button
+                    type="button"
+                    className="secondary-btn thread-contact-add-btn"
+                    onClick={() => setShowAddContactForm((prev) => !prev)}
+                  >
+                    {showAddContactForm ? "Cancelar" : "Agregar contacto"}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-btn thread-contact-sync-mini"
+                    onClick={pickPhoneContact}
+                    disabled={contactPickerLoading}
+                    title="Refrescar nombres del telefono"
+                    aria-label="Refrescar nombres del telefono"
+                  >
+                    {contactPickerLoading ? "..." : "⟳"}
+                  </button>
+                </div>
+                {showAddContactForm ? (
+                  <form className="thread-add-contact-form" onSubmit={createNewContact}>
+                    <input
+                      placeholder="Telefono (+1502...)"
+                      value={newContactPhone}
+                      onChange={(e) => setNewContactPhone(e.target.value)}
+                      required
+                    />
+                    <input
+                      placeholder="Nombre (opcional)"
+                      value={newContactName}
+                      onChange={(e) => setNewContactName(e.target.value)}
+                    />
+                    <button type="submit" disabled={addingContact}>
+                      {addingContact ? "Guardando..." : "Guardar contacto"}
+                    </button>
+                  </form>
+                ) : null}
+                {addContactError ? <p className="error-text">{addContactError}</p> : null}
+                {addContactSuccess ? <p className="subtle">{addContactSuccess}</p> : null}
                 {contactPickerError ? <p className="error-text">{contactPickerError}</p> : null}
                 {contactPickerSuccess ? <p className="subtle">{contactPickerSuccess}</p> : null}
                 {conversationsError ? <p className="error-text">{conversationsError}</p> : null}

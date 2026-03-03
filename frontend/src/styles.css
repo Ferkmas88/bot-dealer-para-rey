@@ -404,6 +404,30 @@ button:hover {
   margin-bottom: 10px;
 }
 
+.thread-contact-actions {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.thread-contact-add-btn {
+  width: 100%;
+}
+
+.thread-contact-sync-mini {
+  min-width: 42px;
+  width: 42px;
+  padding: 8px 0;
+}
+
+.thread-add-contact-form {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
 .thread-scroll {
   overflow-y: auto;
   overflow-x: hidden;
@@ -700,6 +724,13 @@ body[data-route-mode="whatsapp"] .thread-list {
 }
 
 body[data-route-mode="whatsapp"] .thread-contact-picker-btn {
+  border-color: #2a3942;
+  background: #0f161b;
+  color: #d6e2e8;
+}
+
+body[data-route-mode="whatsapp"] .thread-contact-sync-mini,
+body[data-route-mode="whatsapp"] .thread-contact-add-btn {
   border-color: #2a3942;
   background: #0f161b;
   color: #d6e2e8;
