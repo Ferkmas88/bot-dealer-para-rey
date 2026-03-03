@@ -506,6 +506,10 @@ button:hover {
   gap: 8px;
 }
 
+.manual-media-input {
+  grid-column: 1 / -1;
+}
+
 .quick-replies {
   grid-column: 1 / -1;
   display: flex;

@@ -223,6 +223,7 @@ export default function App() {
   const [messagesError, setMessagesError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [manualReplyText, setManualReplyText] = useState("");
+  const [manualMediaUrl, setManualMediaUrl] = useState("");
   const [manualReplyError, setManualReplyError] = useState("");
   const [manualReplySuccess, setManualReplySuccess] = useState("");
   const [manualSending, setManualSending] = useState(false);
@@ -950,7 +951,8 @@ export default function App() {
       return;
     }
     const message = String(rawMessage || "").trim();
-    if (!message) return;
+    const mediaUrl = String(manualMediaUrl || "").trim();
+    if (!message && !mediaUrl) return;
 
     setManualReplyError("");
     setManualReplySuccess("");
@@ -961,13 +963,14 @@ export default function App() {
       const res = await fetch(`${CONVERSATIONS_API_URL}/${encoded}/reply`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message })
+        body: JSON.stringify({ message, mediaUrl })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "No se pudo enviar");
 
       setManualReplyText("");
-      setManualReplySuccess("Mensaje enviado.");
+      setManualMediaUrl("");
+      setManualReplySuccess(mediaUrl ? "Mensaje multimedia enviado." : "Mensaje enviado.");
       await loadMessagesForSession(selectedSessionId);
       await loadConversations({ keepSelection: true });
     } catch (error) {
@@ -1523,11 +1526,18 @@ export default function App() {
                     onChange={(e) => setManualReplyText(e.target.value)}
                     disabled={!selectedSessionId || manualSending || (!selectedSessionId.startsWith("wa:") && !selectedSessionId.startsWith("wa_meta:"))}
                   />
+                  <input
+                    className="manual-media-input"
+                    placeholder="URL de imagen/PDF/audio (opcional)"
+                    value={manualMediaUrl}
+                    onChange={(e) => setManualMediaUrl(e.target.value)}
+                    disabled={!selectedSessionId || manualSending || (!selectedSessionId.startsWith("wa:") && !selectedSessionId.startsWith("wa_meta:"))}
+                  />
                   <button
                     type="submit"
-                    disabled={!selectedSessionId || manualSending || !manualReplyText.trim() || (!selectedSessionId.startsWith("wa:") && !selectedSessionId.startsWith("wa_meta:"))}
+                    disabled={!selectedSessionId || manualSending || (!manualReplyText.trim() && !manualMediaUrl.trim()) || (!selectedSessionId.startsWith("wa:") && !selectedSessionId.startsWith("wa_meta:"))}
                   >
-                    {manualSending ? "Enviando..." : "Enviar manual"}
+                    {manualSending ? "Enviando..." : "Enviar"}
                   </button>
                 </form>
                 {manualReplyError ? <p className="error-text">{manualReplyError}</p> : null}

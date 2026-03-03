@@ -33,7 +33,7 @@ function normalizeToWhatsAppAddress(sessionId) {
   throw new Error("Cannot derive WhatsApp recipient from sessionId");
 }
 
-export async function sendManualWhatsAppReply({ sessionId, body }) {
+export async function sendManualWhatsAppReply({ sessionId, body = "", mediaUrl = "" }) {
   const client = getTwilioClient();
   const from = process.env.TWILIO_WHATSAPP_FROM || "";
 
@@ -42,12 +42,22 @@ export async function sendManualWhatsAppReply({ sessionId, body }) {
   }
 
   const to = normalizeToWhatsAppAddress(sessionId);
+  const messageBody = String(body || "").trim();
+  const media = String(mediaUrl || "").trim();
+  if (!messageBody && !media) {
+    throw new Error("Message body or mediaUrl is required");
+  }
 
-  const result = await client.messages.create({
+  const payload = {
     from: from.startsWith("whatsapp:") ? from : `whatsapp:${from}`,
     to,
-    body
-  });
+    body: messageBody
+  };
+  if (media) {
+    payload.mediaUrl = [media];
+  }
+
+  const result = await client.messages.create(payload);
 
   return result;
 }

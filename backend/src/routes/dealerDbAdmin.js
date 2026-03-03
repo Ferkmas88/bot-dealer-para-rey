@@ -265,25 +265,26 @@ dealerDbAdminRouter.patch("/dealer/db/conversations/:sessionId/bot", async (req,
 dealerDbAdminRouter.post("/dealer/db/conversations/:sessionId/reply", async (req, res) => {
   const sessionId = req.params.sessionId;
   const body = typeof req.body?.message === "string" ? req.body.message.trim() : "";
+  const mediaUrl = typeof req.body?.mediaUrl === "string" ? req.body.mediaUrl.trim() : "";
 
-  if (!body) {
-    return res.status(400).json({ error: "Message is required" });
+  if (!body && !mediaUrl) {
+    return res.status(400).json({ error: "Message or mediaUrl is required" });
   }
 
   try {
     let providerResponse = null;
     if (sessionId.startsWith("wa_meta:")) {
-      providerResponse = await sendMetaWhatsAppText({ sessionId, text: body });
+      providerResponse = await sendMetaWhatsAppText({ sessionId, text: body, mediaUrl });
     } else if (sessionId.startsWith("wa:")) {
-      providerResponse = await sendManualWhatsAppReply({ sessionId, body });
+      providerResponse = await sendManualWhatsAppReply({ sessionId, body, mediaUrl });
     } else {
       return res.status(400).json({ error: "Unsupported session type for manual reply" });
     }
 
     await persistOutgoingAssistantMessage({
       sessionId,
-      assistantMessage: body,
-      source: "manual-agent"
+      assistantMessage: body || `[media] ${mediaUrl}`,
+      source: mediaUrl ? "manual-agent-media" : "manual-agent"
     });
 
     return res.json({
