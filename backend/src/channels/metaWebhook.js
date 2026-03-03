@@ -50,19 +50,44 @@ function formatOptionLine(value) {
   return date.toLocaleString("en-US", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
-function isConfirmChoice(text) {
-  return /^\s*1\s*$/.test(text) || /^(confirmar|confirm|confirmo|confirmed)\b/i.test(text);
+function isOneChoice(text) {
+  return /^\s*1\s*$/.test(text) || /^(opcion|option)\s*1\b/i.test(text);
 }
 
-function isChangeChoice(text) {
-  return /^\s*2\s*$/.test(text) || /^(cambiar|change|reprogramar|reschedule)\b/i.test(text);
+function isTwoChoice(text) {
+  return /^\s*2\s*$/.test(text) || /^(opcion|option)\s*2\b/i.test(text);
+}
+
+function isConfirmAction(text) {
+  return /^(confirmar|confirm|confirmo|confirmed|si confirmo|ok confirmo)\b/i.test(text);
+}
+
+function isRescheduleAction(text) {
+  return /^(reprogramar|reagendar|cambiar|change|reschedule)\b/i.test(text);
+}
+
+function isCancelAction(text) {
+  return /^(cancelar|cancela|cancel|no puedo|no podre|can'?t make it|cannot make it)\b/i.test(text);
 }
 
 async function handleAppointmentFlow({ sessionId, incomingText }) {
   const text = String(incomingText || "").trim().toLowerCase();
   const openAppt = await getLatestOpenAppointmentForLead(sessionId);
 
-  if (openAppt && isConfirmChoice(text) && openAppt.confirmation_state === "PROPOSED") {
+  if (openAppt && isCancelAction(text)) {
+    await updateAppointment(openAppt.id, {
+      status: "CANCELLED",
+      confirmation_state: "CANCELLED",
+      cancelled_at: new Date().toISOString()
+    });
+    await updateLeadStatus(sessionId, "NO_RESPONSE");
+    return {
+      handled: true,
+      reply: "Entendido, cita cancelada. Cuando quieras reagendar, te comparto nuevas opciones."
+    };
+  }
+
+  if (openAppt && isOneChoice(text) && openAppt.confirmation_state === "PROPOSED") {
     const options = Array.isArray(openAppt.proposal_options) ? openAppt.proposal_options : [];
     const selectedAt = options[0] || openAppt.scheduled_at;
     await updateAppointment(openAppt.id, {
@@ -76,7 +101,7 @@ async function handleAppointmentFlow({ sessionId, incomingText }) {
     };
   }
 
-  if (openAppt && isChangeChoice(text) && openAppt.confirmation_state === "PROPOSED") {
+  if (openAppt && isTwoChoice(text) && openAppt.confirmation_state === "PROPOSED") {
     const options = Array.isArray(openAppt.proposal_options) ? openAppt.proposal_options : [];
     const selectedAt = options[1] || options[0] || openAppt.scheduled_at;
     await updateAppointment(openAppt.id, {
@@ -90,7 +115,7 @@ async function handleAppointmentFlow({ sessionId, incomingText }) {
     };
   }
 
-  if (openAppt && isConfirmChoice(text) && openAppt.confirmation_state === "AWAITING_CONFIRMATION") {
+  if (openAppt && (isConfirmAction(text) || isOneChoice(text)) && openAppt.confirmation_state === "AWAITING_CONFIRMATION") {
     const confirmed = await updateAppointment(openAppt.id, {
       status: "CONFIRMED",
       confirmation_state: "CONFIRMED",
@@ -105,7 +130,7 @@ async function handleAppointmentFlow({ sessionId, incomingText }) {
     return { handled: true, reply: "Perfecto, cita confirmada. Te esperamos. Si necesitas cambiar horario, responde 2." };
   }
 
-  if (openAppt && isChangeChoice(text)) {
+  if (openAppt && (isRescheduleAction(text) || isTwoChoice(text))) {
     const options = buildNextAppointmentOptions();
     await updateAppointment(openAppt.id, {
       status: "RESCHEDULED",
@@ -115,6 +140,13 @@ async function handleAppointmentFlow({ sessionId, incomingText }) {
     return {
       handled: true,
       reply: `Claro, te doy dos horarios nuevos:\n1) ${formatOptionLine(options[0])}\n2) ${formatOptionLine(options[1])}\nElige 1 o 2 y luego te pido confirmacion final.`
+    };
+  }
+
+  if (openAppt && isConfirmAction(text) && openAppt.confirmation_state === "CONFIRMED") {
+    return {
+      handled: true,
+      reply: "Tu cita ya esta confirmada. Si quieres cambiarla, responde reprogramar."
     };
   }
 
