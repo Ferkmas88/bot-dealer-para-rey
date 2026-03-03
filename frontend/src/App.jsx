@@ -189,7 +189,7 @@ export default function App() {
   const [appointmentsRows, setAppointmentsRows] = useState([]);
   const [appointmentsLoading, setAppointmentsLoading] = useState(false);
   const [appointmentsError, setAppointmentsError] = useState("");
-  const [appointmentsDateFilter, setAppointmentsDateFilter] = useState(() => toDateInputValue(new Date()));
+  const [appointmentsMenuFilter, setAppointmentsMenuFilter] = useState("today");
   const [leadRows, setLeadRows] = useState([]);
   const [appointmentForm, setAppointmentForm] = useState({
     lead_session_id: "",
@@ -274,7 +274,7 @@ export default function App() {
       loadAppointments();
       loadLeads();
     }
-  }, [isAuthenticated, routeMode, adminView, appointmentsDateFilter]);
+  }, [isAuthenticated, routeMode, adminView, appointmentsMenuFilter]);
 
   useEffect(() => {
     if (!isAuthenticated || !pushSupported) return;
@@ -623,11 +623,15 @@ export default function App() {
     setAppointmentsError("");
     try {
       const params = new URLSearchParams({ limit: "500" });
-      if (appointmentsDateFilter) {
-        const from = `${appointmentsDateFilter}T00:00:00.000Z`;
-        const to = `${appointmentsDateFilter}T23:59:59.999Z`;
+      const now = new Date();
+      if (appointmentsMenuFilter === "today") {
+        const today = toDateInputValue(now);
+        const from = `${today}T00:00:00.000Z`;
+        const to = `${today}T23:59:59.999Z`;
         params.set("from", from);
         params.set("to", to);
+      } else if (appointmentsMenuFilter === "upcoming") {
+        params.set("from", now.toISOString());
       }
       const res = await fetch(`${APPOINTMENTS_API_URL}?${params.toString()}`);
       const data = await res.json();
@@ -1302,11 +1306,29 @@ export default function App() {
               <article className="panel crm-table-panel">
                 <div className="panel-head">
                   <h2>Calendario de citas</h2>
-                  <input
-                    type="date"
-                    value={appointmentsDateFilter}
-                    onChange={(e) => setAppointmentsDateFilter(e.target.value)}
-                  />
+                  <div className="thread-actions">
+                    <button
+                      type="button"
+                      className={appointmentsMenuFilter === "today" ? "active-btn" : "secondary-btn"}
+                      onClick={() => setAppointmentsMenuFilter("today")}
+                    >
+                      Hoy
+                    </button>
+                    <button
+                      type="button"
+                      className={appointmentsMenuFilter === "upcoming" ? "active-btn" : "secondary-btn"}
+                      onClick={() => setAppointmentsMenuFilter("upcoming")}
+                    >
+                      Proximas
+                    </button>
+                    <button
+                      type="button"
+                      className={appointmentsMenuFilter === "all" ? "active-btn" : "secondary-btn"}
+                      onClick={() => setAppointmentsMenuFilter("all")}
+                    >
+                      Todas
+                    </button>
+                  </div>
                 </div>
                 {appointmentsLoading ? <p className="subtle">Cargando citas...</p> : null}
                 <div className="inventory-table-wrap">
@@ -1354,7 +1376,7 @@ export default function App() {
               <div className="panel-head">
                 <h2>Resumen</h2>
               </div>
-              <p className="subtle">Citas del dia: {appointmentsRows.length}</p>
+              <p className="subtle">Citas visibles: {appointmentsRows.length}</p>
               <p className="subtle">Leads cargados: {leadRows.length}</p>
               <p className="subtle">Al confirmar una cita se envia correo automatico al dueno.</p>
             </aside>
