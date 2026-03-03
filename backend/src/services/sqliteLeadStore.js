@@ -1289,16 +1289,31 @@ function normalizeAppointmentRow(row) {
 
 export async function createAppointment({
   leadSessionId,
+  lead_session_id,
   scheduledAt,
+  scheduled_at,
   vehicleId = null,
+  vehicle_id = null,
   status = "PENDING",
   confirmationState = "PROPOSED",
+  confirmation_state,
   proposalOptions = [],
+  proposal_options,
   notes = ""
 } = {}) {
+  const safeLeadSessionId = leadSessionId ?? lead_session_id ?? null;
+  const safeScheduledAt = scheduledAt ?? scheduled_at ?? null;
+  const safeVehicleId = vehicleId ?? vehicle_id ?? null;
+  const safeConfirmationState = confirmationState ?? confirmation_state ?? "PROPOSED";
+  const safeProposalOptions = proposalOptions ?? proposal_options ?? [];
+
+  if (!safeLeadSessionId || !safeScheduledAt) {
+    throw new Error("lead_session_id and scheduled_at are required");
+  }
+
   const now = new Date().toISOString();
   const normalizedStatus = normalizeAppointmentStatus(status);
-  const proposalJson = safeJsonStringify(proposalOptions);
+  const proposalJson = safeJsonStringify(safeProposalOptions);
 
   if (usePgInventory && pgPool) {
     await pgMessagingReady;
@@ -1310,7 +1325,7 @@ export async function createAppointment({
         VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9)
         RETURNING *
       `,
-      [leadSessionId, scheduledAt, vehicleId, normalizedStatus, confirmationState, proposalJson, notes, now, now]
+      [safeLeadSessionId, safeScheduledAt, safeVehicleId, normalizedStatus, safeConfirmationState, proposalJson, notes, now, now]
     );
     return normalizeAppointmentRow(result.rows?.[0] || null);
   }
@@ -1324,7 +1339,7 @@ export async function createAppointment({
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `
     )
-    .run(leadSessionId, scheduledAt, vehicleId, normalizedStatus, confirmationState, proposalJson, notes, now, now);
+    .run(safeLeadSessionId, safeScheduledAt, safeVehicleId, normalizedStatus, safeConfirmationState, proposalJson, notes, now, now);
 
   return normalizeAppointmentRow(
     db.prepare(`SELECT * FROM appointments WHERE id = ? LIMIT 1`).get(Number(insertRes.lastInsertRowid)) || null
