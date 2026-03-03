@@ -15,6 +15,7 @@ import {
 import { sendAppointmentConfirmedOwnerEmail, sendHotLeadHandoffOwnerEmail } from "../services/ownerNotifications.js";
 
 export const metaWebhookRouter = express.Router();
+const BOT_HELPER_PREFIX = "Soy el bot asistente de Empire Rey y te estoy ayudando 24/7.";
 
 function detectLanguage(text) {
   if (/[¿¡]|(hola|cita|carro|quiero|manana|direccion)/i.test(text || "")) return "es";
@@ -83,7 +84,7 @@ async function handleAppointmentFlow({ sessionId, incomingText }) {
     await updateLeadStatus(sessionId, "NO_RESPONSE");
     return {
       handled: true,
-      reply: "Entendido, cita cancelada. Cuando quieras reagendar, te comparto nuevas opciones."
+      reply: `${BOT_HELPER_PREFIX}\nEntendido, cita cancelada. Cuando quieras reagendar, te comparto nuevas opciones.`
     };
   }
 
@@ -97,7 +98,7 @@ async function handleAppointmentFlow({ sessionId, incomingText }) {
     });
     return {
       handled: true,
-      reply: `Resumen de tu cita:\nFecha/Hora: ${formatOptionLine(selectedAt)}\nResponde:\n1 confirmar\n2 cambiar`
+      reply: `${BOT_HELPER_PREFIX}\nResumen de tu cita:\nFecha/Hora: ${formatOptionLine(selectedAt)}\nResponde:\n1 confirmar\n2 cambiar`
     };
   }
 
@@ -111,7 +112,7 @@ async function handleAppointmentFlow({ sessionId, incomingText }) {
     });
     return {
       handled: true,
-      reply: `Resumen de tu cita:\nFecha/Hora: ${formatOptionLine(selectedAt)}\nResponde:\n1 confirmar\n2 cambiar`
+      reply: `${BOT_HELPER_PREFIX}\nResumen de tu cita:\nFecha/Hora: ${formatOptionLine(selectedAt)}\nResponde:\n1 confirmar\n2 cambiar`
     };
   }
 
@@ -123,11 +124,11 @@ async function handleAppointmentFlow({ sessionId, incomingText }) {
     });
     const lead = await updateLeadStatus(sessionId, "BOOKED");
     await sendAppointmentConfirmedOwnerEmail({
-      to: process.env.OWNER_NOTIFICATION_EMAIL || "rey1309ltu@gmail.com",
+      to: process.env.OWNER_NOTIFICATION_EMAIL || "ferkmas88@gmail.com",
       appointment: confirmed,
       lead
     });
-    return { handled: true, reply: "Perfecto, cita confirmada. Te esperamos. Si necesitas cambiar horario, responde 2." };
+    return { handled: true, reply: `${BOT_HELPER_PREFIX}\nPerfecto, cita confirmada. Te esperamos. Si necesitas cambiar horario, responde 2.` };
   }
 
   if (openAppt && (isRescheduleAction(text) || isTwoChoice(text))) {
@@ -139,14 +140,14 @@ async function handleAppointmentFlow({ sessionId, incomingText }) {
     });
     return {
       handled: true,
-      reply: `Claro, te doy dos horarios nuevos:\n1) ${formatOptionLine(options[0])}\n2) ${formatOptionLine(options[1])}\nElige 1 o 2 y luego te pido confirmacion final.`
+      reply: `${BOT_HELPER_PREFIX}\nClaro, te doy dos horarios nuevos:\n1) ${formatOptionLine(options[0])}\n2) ${formatOptionLine(options[1])}\nElige 1 o 2 y luego te pido confirmacion final.`
     };
   }
 
   if (openAppt && isConfirmAction(text) && openAppt.confirmation_state === "CONFIRMED") {
     return {
       handled: true,
-      reply: "Tu cita ya esta confirmada. Si quieres cambiarla, responde reprogramar."
+      reply: `${BOT_HELPER_PREFIX}\nTu cita ya esta confirmada. Si quieres cambiarla, responde reprogramar.`
     };
   }
 
@@ -162,7 +163,7 @@ async function handleAppointmentFlow({ sessionId, incomingText }) {
     await updateLeadStatus(sessionId, "APPT_PENDING");
     return {
       handled: true,
-      reply: `Te propongo:\n1) ${formatOptionLine(options[0])}\n2) ${formatOptionLine(options[1])}\nElige una opcion y luego te envio confirmacion final.`
+      reply: `${BOT_HELPER_PREFIX}\nTe propongo:\n1) ${formatOptionLine(options[0])}\n2) ${formatOptionLine(options[1])}\nElige una opcion y luego te envio confirmacion final.`
     };
   }
 
@@ -325,7 +326,7 @@ metaWebhookRouter.post("/whatsapp", async (req, res) => {
         if (shouldNotifyOwner) {
           const openAppt = await getLatestOpenAppointmentForLead(sessionId);
           sendHotLeadHandoffOwnerEmail({
-            to: process.env.OWNER_NOTIFICATION_EMAIL || "rey1309ltu@gmail.com",
+            to: process.env.OWNER_NOTIFICATION_EMAIL || "ferkmas88@gmail.com",
             lead: updatedLead,
             appointment: openAppt,
             lastMessage: msg.body

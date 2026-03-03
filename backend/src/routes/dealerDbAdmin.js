@@ -293,7 +293,7 @@ dealerDbAdminRouter.post("/dealer/db/appointments/:id/confirm", async (req, res)
 
   const lead = await updateLeadStatus(appointment.lead_session_id, "BOOKED");
   await sendAppointmentConfirmedOwnerEmail({
-    to: process.env.OWNER_NOTIFICATION_EMAIL || "rey1309ltu@gmail.com",
+    to: process.env.OWNER_NOTIFICATION_EMAIL || "ferkmas88@gmail.com",
     appointment: updatedAppointment,
     lead
   });
@@ -445,7 +445,7 @@ dealerDbAdminRouter.post("/dealer/db/conversations/:sessionId/appointment/action
       await updateLeadStatus(sessionId, "BOOKED");
       outboundText = "Perfecto, tu cita quedo confirmada. Te esperamos.";
       await sendAppointmentConfirmedOwnerEmail({
-        to: process.env.OWNER_NOTIFICATION_EMAIL || "rey1309ltu@gmail.com",
+        to: process.env.OWNER_NOTIFICATION_EMAIL || "ferkmas88@gmail.com",
         appointment: updatedAppointment,
         lead
       });
