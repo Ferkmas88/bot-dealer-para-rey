@@ -490,6 +490,15 @@ button:hover {
   flex-wrap: wrap;
 }
 
+.appointments-date-input {
+  min-height: 36px;
+  border-radius: 10px;
+  border: 1px solid #7e5a1d;
+  background: #131313;
+  color: var(--ink);
+  padding: 6px 10px;
+}
+
 .thread-messages {
   margin-top: 10px;
   overflow-y: auto;

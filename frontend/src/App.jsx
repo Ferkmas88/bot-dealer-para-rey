@@ -191,6 +191,7 @@ export default function App() {
   const [appointmentsLoading, setAppointmentsLoading] = useState(false);
   const [appointmentsError, setAppointmentsError] = useState("");
   const [appointmentsMenuFilter, setAppointmentsMenuFilter] = useState("today");
+  const [appointmentsDate, setAppointmentsDate] = useState(() => toDateInputValue(new Date()));
   const [leadRows, setLeadRows] = useState([]);
   const [appointmentForm, setAppointmentForm] = useState({
     lead_session_id: "",
@@ -276,7 +277,7 @@ export default function App() {
       loadUpcomingAppointments();
       loadLeads();
     }
-  }, [isAuthenticated, routeMode, adminView, appointmentsMenuFilter]);
+  }, [isAuthenticated, routeMode, adminView, appointmentsMenuFilter, appointmentsDate]);
 
   useEffect(() => {
     if (!isAuthenticated || !pushSupported) return;
@@ -626,7 +627,12 @@ export default function App() {
     try {
       const params = new URLSearchParams({ limit: "500" });
       const now = new Date();
-      if (appointmentsMenuFilter === "today") {
+      if (appointmentsMenuFilter === "date" && appointmentsDate) {
+        const from = `${appointmentsDate}T00:00:00.000Z`;
+        const to = `${appointmentsDate}T23:59:59.999Z`;
+        params.set("from", from);
+        params.set("to", to);
+      } else if (appointmentsMenuFilter === "today") {
         const today = toDateInputValue(now);
         const from = `${today}T00:00:00.000Z`;
         const to = `${today}T23:59:59.999Z`;
@@ -1333,7 +1339,10 @@ export default function App() {
                     <button
                       type="button"
                       className={appointmentsMenuFilter === "today" ? "active-btn" : "secondary-btn"}
-                      onClick={() => setAppointmentsMenuFilter("today")}
+                      onClick={() => {
+                        setAppointmentsDate(toDateInputValue(new Date()));
+                        setAppointmentsMenuFilter("today");
+                      }}
                     >
                       Hoy
                     </button>
@@ -1351,6 +1360,16 @@ export default function App() {
                     >
                       Todas
                     </button>
+                    <input
+                      className="appointments-date-input"
+                      type="date"
+                      value={appointmentsDate}
+                      onChange={(e) => {
+                        setAppointmentsDate(e.target.value);
+                        setAppointmentsMenuFilter("date");
+                      }}
+                      aria-label="Seleccionar fecha de citas"
+                    />
                   </div>
                 </div>
                 {appointmentsLoading ? <p className="subtle">Cargando citas...</p> : null}
