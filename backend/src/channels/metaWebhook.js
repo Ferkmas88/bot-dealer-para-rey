@@ -6,6 +6,7 @@ import {
   getConversationSettings,
   getLeadBySessionId,
   hasWelcomeMessageSent,
+  isAppointmentSlotAvailable,
   getLatestOpenAppointmentForLead,
   persistIncomingUserMessage,
   persistOutgoingAssistantMessage,
@@ -63,6 +64,33 @@ function buildNextAppointmentOptions() {
   const option2 = new Date(now.getTime() + 24 * 60 * 60 * 1000);
   option2.setHours(16, 0, 0, 0);
   return [option1.toISOString(), option2.toISOString()];
+}
+
+async function buildAvailableAppointmentOptions({ excludeAppointmentId = null } = {}) {
+  const base = new Date();
+  const candidates = [];
+  const hours = [11, 13, 15, 16, 17];
+  for (let d = 0; d < 7; d += 1) {
+    for (const h of hours) {
+      const slot = new Date(base);
+      slot.setDate(base.getDate() + d);
+      slot.setHours(h, 0, 0, 0);
+      if (slot.getTime() <= Date.now()) continue;
+      candidates.push(slot.toISOString());
+    }
+  }
+
+  const free = [];
+  for (const candidate of candidates) {
+    const ok = await isAppointmentSlotAvailable({
+      scheduledAt: candidate,
+      excludeAppointmentId,
+      windowMinutes: 45
+    });
+    if (ok) free.push(candidate);
+    if (free.length >= 2) break;
+  }
+  return free.length ? free : buildNextAppointmentOptions();
 }
 
 function formatOptionLine(value) {
@@ -213,6 +241,18 @@ async function handleAppointmentFlow({ sessionId, incomingText, lead = null }) {
   }
 
   if (openAppt && requestedAt && openAppt.confirmation_state === "PROPOSED") {
+    const slotAvailable = await isAppointmentSlotAvailable({
+      scheduledAt: requestedAt,
+      excludeAppointmentId: openAppt.id,
+      windowMinutes: 45
+    });
+    if (!slotAvailable) {
+      const options = await buildAvailableAppointmentOptions({ excludeAppointmentId: openAppt.id });
+      return {
+        handled: true,
+        reply: `Ese horario ya esta ocupado. Tengo disponible ${formatOptionLine(options[0])} o ${formatOptionLine(options[1])}. Dime cual prefieres.`
+      };
+    }
     const confirmed = await updateAppointment(openAppt.id, {
       scheduled_at: requestedAt,
       status: "CONFIRMED",
@@ -282,7 +322,7 @@ async function handleAppointmentFlow({ sessionId, incomingText, lead = null }) {
   }
 
   if (openAppt && (isRescheduleAction(text) || isTwoChoice(text))) {
-    const options = buildNextAppointmentOptions();
+    const options = await buildAvailableAppointmentOptions({ excludeAppointmentId: openAppt.id });
     await updateAppointment(openAppt.id, {
       status: "RESCHEDULED",
       confirmation_state: "PROPOSED",
@@ -316,8 +356,18 @@ async function handleAppointmentFlow({ sessionId, incomingText, lead = null }) {
         reply: "Claro. Para cuando quieres la cita? Dime dia y hora exacta (por ejemplo: hoy 4pm o manana 11am)."
       };
     }
-    const options = buildNextAppointmentOptions();
+    const options = await buildAvailableAppointmentOptions();
     const initialAt = requestedAt;
+    const slotAvailable = await isAppointmentSlotAvailable({
+      scheduledAt: initialAt,
+      windowMinutes: 45
+    });
+    if (!slotAvailable) {
+      return {
+        handled: true,
+        reply: `Ese horario ya esta ocupado. Tengo disponible ${formatOptionLine(options[0])} o ${formatOptionLine(options[1])}. Dime cual prefieres.`
+      };
+    }
     await createAppointment({
       lead_session_id: sessionId,
       scheduled_at: initialAt,

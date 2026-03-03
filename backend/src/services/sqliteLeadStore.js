@@ -1608,6 +1608,48 @@ export async function getLatestOpenAppointmentForLead(leadSessionId) {
   );
 }
 
+export async function isAppointmentSlotAvailable({ scheduledAt, excludeAppointmentId = null, windowMinutes = 45 } = {}) {
+  const when = new Date(scheduledAt || "");
+  if (Number.isNaN(when.getTime())) return false;
+  const halfWindowMs = Math.max(5, Number(windowMinutes) || 45) * 60_000;
+  const from = new Date(when.getTime() - halfWindowMs).toISOString();
+  const to = new Date(when.getTime() + halfWindowMs).toISOString();
+
+  if (usePgInventory && pgPool) {
+    await pgMessagingReady;
+    const params = [from, to];
+    let sql = `
+      SELECT COUNT(1)::int AS value
+      FROM appointments
+      WHERE status IN ('PENDING', 'CONFIRMED', 'RESCHEDULED')
+        AND scheduled_at >= $1
+        AND scheduled_at <= $2
+    `;
+    if (excludeAppointmentId != null) {
+      params.push(Number(excludeAppointmentId));
+      sql += ` AND id <> $${params.length}`;
+    }
+    const result = await pgPool.query(sql, params);
+    const count = Number(result.rows?.[0]?.value || 0);
+    return count === 0;
+  }
+
+  let sql = `
+    SELECT COUNT(1) AS value
+    FROM appointments
+    WHERE status IN ('PENDING', 'CONFIRMED', 'RESCHEDULED')
+      AND scheduled_at >= ?
+      AND scheduled_at <= ?
+  `;
+  const params = [from, to];
+  if (excludeAppointmentId != null) {
+    sql += ` AND id <> ?`;
+    params.push(Number(excludeAppointmentId));
+  }
+  const row = db.prepare(sql).get(...params);
+  return Number(row?.value || 0) === 0;
+}
+
 export async function getUnreadMessagesTotal() {
   if (usePgInventory && pgPool) {
     await pgMessagingReady;
