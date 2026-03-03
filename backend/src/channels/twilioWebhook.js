@@ -101,6 +101,10 @@ function detectLanguage(text) {
   return "en";
 }
 
+function isGreetingOnlyMessage(text) {
+  return /^(hola+|hello+|hi+|buenas|buenos dias|buenas tardes|buenas noches)\s*$/i.test(String(text || "").trim());
+}
+
 function inferLeadStatus(text) {
   if (/(appointment|cita|agendar|agendo|test drive)/i.test(text || "")) return "APPT_PENDING";
   if (/(precio|carro|auto|pickup|suv|sedan|quiero|interesa)/i.test(text || "")) return "QUALIFYING";
@@ -301,6 +305,23 @@ twilioWebhookRouter.post("/whatsapp", async (req, res) => {
       mode: botEnabled && !handoffToHuman ? "BOT" : "HUMAN",
       lastMessageAt: new Date().toISOString()
     });
+
+    if (isGreetingOnlyMessage(incomingText)) {
+      await persistIncomingUserMessage({
+        sessionId,
+        userMessage: incomingText,
+        source: "greeting-fastpath"
+      });
+      await persistOutgoingAssistantMessage({
+        sessionId,
+        assistantMessage: FIRST_CONTACT_MESSAGE,
+        source: "greeting-fastpath",
+        intent: "welcome"
+      });
+      const twiml = new twilio.twiml.MessagingResponse();
+      twiml.message().body(FIRST_CONTACT_MESSAGE);
+      return res.type("text/xml").send(twiml.toString());
+    }
 
     if (handoffToHuman) {
       await persistIncomingUserMessage({
