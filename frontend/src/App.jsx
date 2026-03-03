@@ -226,10 +226,10 @@ export default function App() {
   }, [isAuthenticated]);
 
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && routeMode === "admin") {
       loadInventory();
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, routeMode]);
 
   useEffect(() => {
     if (!isAuthenticated || !pushSupported) return;
