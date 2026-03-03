@@ -237,7 +237,7 @@ function isPerformanceRequest(text) {
 }
 
 function asksForReyOrSalesContact(text) {
-  return /(hablar con rey|con rey|rey|vendedor|salesman|sales person|asesor|agente|owner|dueno|dueño|llamar a rey)/i.test(
+  return /(hablar con rey|con rey|rey|vendedor|salesman|sales person|asesor|agente|owner|dueno|dueño|llamar a rey|hablar con alguien|con alguien|equipo|team|atencion directa|persona real)/i.test(
     text || ""
   );
 }

@@ -35,7 +35,9 @@ function isHotLead(text) {
 }
 
 function requestsHuman(text) {
-  return /(humano|asesor|agent|agente|persona|representante)/i.test(text || "");
+  return /(humano|asesor|agent|agente|persona|representante|equipo|team|alguien|atencion directa|persona real)/i.test(
+    text || ""
+  );
 }
 
 function buildNextAppointmentOptions() {
@@ -326,7 +328,7 @@ metaWebhookRouter.post("/whatsapp", async (req, res) => {
         );
 
         const handoffReply = wantsHuman
-          ? "Perfecto. Te paso con un asesor humano ahora mismo. En breve te escribimos."
+          ? "Claro. Si quieres hablar con alguien del equipo, contacta directo a Rey:\n+1 (502) 576-8116\nEmpire Rey"
           : "Veo interes urgente. Te conecto con un asesor humano ahora mismo para atenderte mas rapido.";
 
         await sendWhatsAppText({
