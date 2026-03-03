@@ -71,6 +71,25 @@ function formatOptionLine(value) {
   return date.toLocaleString("en-US", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
+function parseRequestedDateTime(text) {
+  const raw = String(text || "").toLowerCase();
+  const dayOffset = /manana|mañana|tomorrow/.test(raw) ? 1 : /hoy|today/.test(raw) ? 0 : null;
+  const timeMatch = raw.match(/\b([0-1]?\d)(?::([0-5]\d))?\s*(am|pm)\b/);
+  if (dayOffset === null || !timeMatch) return null;
+
+  const hour12 = Number(timeMatch[1]);
+  if (!Number.isFinite(hour12) || hour12 < 1 || hour12 > 12) return null;
+  const minute = Number(timeMatch[2] || "0");
+  const meridiem = timeMatch[3];
+  let hour24 = hour12 % 12;
+  if (meridiem === "pm") hour24 += 12;
+
+  const date = new Date();
+  date.setDate(date.getDate() + dayOffset);
+  date.setHours(hour24, minute, 0, 0);
+  return date.toISOString();
+}
+
 function isOneChoice(text) {
   return /^\s*1\s*$/.test(text) || /^(opcion|option)\s*1\b/i.test(text);
 }
@@ -94,6 +113,7 @@ function isCancelAction(text) {
 async function handleAppointmentFlow({ sessionId, incomingText }) {
   const text = String(incomingText || "").trim().toLowerCase();
   const openAppt = await getLatestOpenAppointmentForLead(sessionId);
+  const requestedAt = parseRequestedDateTime(text);
 
   if (openAppt && isCancelAction(text)) {
     await updateAppointment(openAppt.id, {
@@ -119,6 +139,18 @@ async function handleAppointmentFlow({ sessionId, incomingText }) {
     return {
       handled: true,
       reply: `Resumen de tu cita:\nFecha/Hora: ${formatOptionLine(selectedAt)}\nResponde:\n1 confirmar\n2 cambiar`
+    };
+  }
+
+  if (openAppt && requestedAt && openAppt.confirmation_state === "PROPOSED") {
+    await updateAppointment(openAppt.id, {
+      scheduled_at: requestedAt,
+      status: "PENDING",
+      confirmation_state: "AWAITING_CONFIRMATION"
+    });
+    return {
+      handled: true,
+      reply: `Si, tengo disponibilidad para ${formatOptionLine(requestedAt)}.\nResumen de tu cita:\nFecha/Hora: ${formatOptionLine(requestedAt)}\nResponde:\n1 confirmar\n2 cambiar`
     };
   }
 
@@ -173,14 +205,21 @@ async function handleAppointmentFlow({ sessionId, incomingText }) {
 
   if (/agendar|cita|appointment|test drive|visita/i.test(text) && !openAppt) {
     const options = buildNextAppointmentOptions();
+    const initialAt = requestedAt || options[0];
     await createAppointment({
       lead_session_id: sessionId,
-      scheduled_at: options[0],
+      scheduled_at: initialAt,
       status: "PENDING",
-      confirmation_state: "PROPOSED",
+      confirmation_state: requestedAt ? "AWAITING_CONFIRMATION" : "PROPOSED",
       proposal_options: options
     });
     await updateLeadStatus(sessionId, "APPT_PENDING");
+    if (requestedAt) {
+      return {
+        handled: true,
+        reply: `Perfecto, si tengo disponibilidad para ${formatOptionLine(requestedAt)}.\nResumen de tu cita:\nFecha/Hora: ${formatOptionLine(requestedAt)}\nResponde:\n1 confirmar\n2 cambiar`
+      };
+    }
     return {
       handled: true,
       reply: `Te propongo:\n1) ${formatOptionLine(options[0])}\n2) ${formatOptionLine(options[1])}\nElige una opcion y luego te envio confirmacion final.`

@@ -133,6 +133,25 @@ function extractCustomerName(text) {
   return match[2].trim();
 }
 
+function extractLooseCustomerName(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return null;
+  if (/\d/.test(raw)) return null;
+  if (/[!?.,:;/$]/.test(raw)) return null;
+  const lower = raw.toLowerCase();
+  if (
+    /^(hola|hello|hi|ok|okay|si|yes|no|quiero|cita|agendar|agenda|hoy|manana|mañana|confirmar|reprogramar|cancelar|gracias)$/.test(
+      lower
+    )
+  ) {
+    return null;
+  }
+  const tokens = raw.split(/\s+/).filter(Boolean);
+  if (!tokens.length || tokens.length > 3) return null;
+  if (!tokens.every((token) => /^[a-zA-ZÀ-ÿ' -]{2,20}$/.test(token))) return null;
+  return raw;
+}
+
 function extractAppointmentSlot(text) {
   const lower = (text || "").toLowerCase();
   const day =
@@ -1148,7 +1167,8 @@ export async function processDealerSessionMessageWithLLM(message, context = {}, 
     const intent = "buying_interest";
     const baseContext = mergeContext(context, extracted, intent);
     const appointmentSlot = slotFromMessage ?? context?.appointmentSlot ?? null;
-    const customerName = nameFromMessage ?? context?.customerName ?? null;
+    const looseNameFromMessage = context?.appointmentSlot ? extractLooseCustomerName(safeMessage) : null;
+    const customerName = nameFromMessage ?? looseNameFromMessage ?? context?.customerName ?? null;
     const updatedContext = {
       ...baseContext,
       appointmentSlot,
@@ -1159,7 +1179,7 @@ export async function processDealerSessionMessageWithLLM(message, context = {}, 
 
     if (!appointmentSlot) {
       return {
-        reply: "Perfecto. Te agendo sin problema. Te funciona hoy 4pm o manana 11am?",
+        reply: "Perfecto. Te ayudo con la cita. Para cuando quieres venir (dia y hora)?",
         intent,
         entities,
         suggestions: buildSuggestions(intent, entities, safeMessage),
@@ -1172,7 +1192,7 @@ export async function processDealerSessionMessageWithLLM(message, context = {}, 
 
     if (!customerName) {
       return {
-        reply: `Perfecto. Te agendo para ${appointmentSlot}. Me compartes tu nombre?`,
+        reply: `Perfecto. Si tengo disponibilidad para ${appointmentSlot}. Para reservarla, me compartes tu nombre?`,
         intent,
         entities,
         suggestions: buildSuggestions(intent, entities, safeMessage),
