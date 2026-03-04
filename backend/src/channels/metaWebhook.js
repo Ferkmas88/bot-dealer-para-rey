@@ -18,17 +18,14 @@ import { sendAppointmentConfirmedOwnerEmail, sendHotLeadHandoffOwnerEmail } from
 
 export const metaWebhookRouter = express.Router();
 const FIRST_CONTACT_MESSAGE =
-  "Hola. Soy el asistente automatico de Empire Rey Auto Sales. Estoy aqui 24/7 para ayudarte.\n\n" +
+  "Hola 👋\n" +
+  "Soy el asistente automatico de Empire Rey Auto Sales. Estoy disponible 24/7 para ayudarte.\n\n" +
   "Puedo ayudarte a:\n" +
-  "- Buscar el carro que estas necesitando\n" +
-  "- Agendar tu cita en el dealer\n" +
-  "- Ponerte en contacto directo con Rey\n" +
-  "- Conectarte con nuestro mecanico para servicio o preguntas\n" +
-  "- Responder dudas sobre down payment, credito o requisitos\n\n" +
-  "3510 Dixie Hwy, Louisville, KY 40216\n" +
-  "502-576-8116 | 502-780-1096\n\n" +
-  "Dime que estas buscando (SUV, sedan o pickup) y cuanto tienes para down, y empezamos ahora mismo.\n\n" +
-  "Si prefieres atencion directa, te conecto con el equipo ahora mismo.";
+  "• Encontrar el carro que necesitas\n" +
+  "• Agendar una cita en el dealer\n" +
+  "• Conectarte directamente con Rey\n" +
+  "• Contactar a nuestro mecanico\n" +
+  "• Responder dudas sobre credito, requisitos o down payment";
 const DEALER_ADDRESS_TEXT = "3510 Dixie Hwy, Louisville, KY 40216";
 const inboundMessageCache = new Map();
 const INBOUND_DEDUP_TTL_MS = 10 * 60 * 1000;

@@ -25,17 +25,14 @@ const INBOX_BADGE_POLL_MS = 7000;
 const INBOX_LIST_POLL_MS = 5000;
 const INBOX_MESSAGES_POLL_MS = 3500;
 const OPENING_PROMO_MESSAGE =
-  "Hola. Soy el asistente automatico de Empire Rey Auto Sales. Estoy aqui 24/7 para ayudarte.\n\n" +
-  "Puedo ayudarte a:\n\n" +
-  "- Buscar el carro que estas necesitando\n" +
-  "- Agendar tu cita en el dealer\n" +
-  "- Ponerte en contacto directo con Rey\n" +
-  "- Conectarte con nuestro mecanico para servicio o preguntas\n" +
-  "- Responder dudas sobre down payment, credito o requisitos\n\n" +
-  "3510 Dixie Hwy, Louisville, KY 40216\n" +
-  "502-576-8116 | 502-780-1096\n\n" +
-  "Dime que estas buscando (SUV, sedan o pickup) y cuanto tienes para down, y empezamos ahora mismo.\n\n" +
-  "Si prefieres atencion directa, te conecto con el equipo ahora mismo.";
+  "Hola 👋\n" +
+  "Soy el asistente automatico de Empire Rey Auto Sales. Estoy disponible 24/7 para ayudarte.\n\n" +
+  "Puedo ayudarte a:\n" +
+  "• Encontrar el carro que necesitas\n" +
+  "• Agendar una cita en el dealer\n" +
+  "• Conectarte directamente con Rey\n" +
+  "• Contactar a nuestro mecanico\n" +
+  "• Responder dudas sobre credito, requisitos o down payment";
 
 const EMPTY_FORM = {
   make: "",
