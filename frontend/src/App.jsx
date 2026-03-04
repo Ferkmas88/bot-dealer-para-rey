@@ -19,7 +19,6 @@ const PANEL_PASSWORD = import.meta.env.VITE_PANEL_PASSWORD || "ReyDealer2026";
 const AUTH_STORAGE_KEY = "dealer-panel-auth";
 const AUTH_PERSIST_STORAGE_KEY = "dealer-panel-auth-persist-v1";
 const AUTH_PERSIST_TTL_MS = 1000 * 60 * 60 * 24 * 30;
-const UPCOMING_APPOINTMENTS_WINDOW_MS = 1000 * 60 * 60 * 48;
 const INBOX_SEEN_STORAGE_KEY = "dealer-inbox-seen-counts-v1";
 const CONTACT_NAME_MAP_STORAGE_KEY = "dealer-contact-name-map-v1";
 const INBOX_BADGE_POLL_MS = 7000;
@@ -85,6 +84,17 @@ function formatConversationDisplayName(row, contactNameMap = {}) {
   const mappedBySession = findContactNameByDigits(contactNameMap, row?.session_id || "");
   if (mappedBySession) return mappedBySession;
   return formatSessionLabel(row?.session_id || "");
+}
+
+function formatAppointmentLeadName(row, contactNameMap = {}) {
+  const name = String(row?.lead_name || "").trim();
+  if (name) return name;
+  const mappedByPhone = findContactNameByDigits(contactNameMap, row?.lead_phone || "");
+  if (mappedByPhone) return mappedByPhone;
+  const mappedBySession = findContactNameByDigits(contactNameMap, row?.lead_session_id || "");
+  if (mappedBySession) return mappedBySession;
+  if (row?.lead_phone) return row.lead_phone;
+  return formatSessionLabel(row?.lead_session_id || "");
 }
 
 function normalizePhoneDigits(value) {
@@ -211,7 +221,7 @@ function resolveAdminTabFromPathname() {
 function appointmentEmptyMessage(filter) {
   if (filter === "today") return "No hay citas para hoy.";
   if (filter === "date") return "No hay citas para la fecha seleccionada.";
-  if (filter === "upcoming") return "No hay citas proximas en las siguientes 48 horas.";
+  if (filter === "upcoming") return "No hay citas proximas.";
   return "No hay citas registradas.";
 }
 
@@ -757,9 +767,7 @@ export default function App() {
         params.set("from", from);
         params.set("to", to);
       } else if (appointmentsMenuFilter === "upcoming") {
-        const to = new Date(now.getTime() + UPCOMING_APPOINTMENTS_WINDOW_MS).toISOString();
         params.set("from", now.toISOString());
-        params.set("to", to);
       }
       const res = await fetch(`${APPOINTMENTS_API_URL}?${params.toString()}`);
       const data = await res.json();
@@ -776,7 +784,6 @@ export default function App() {
       const params = new URLSearchParams({ limit: "500" });
       const now = new Date();
       params.set("from", now.toISOString());
-      params.set("to", new Date(now.getTime() + UPCOMING_APPOINTMENTS_WINDOW_MS).toISOString());
       const res = await fetch(`${APPOINTMENTS_API_URL}?${params.toString()}`);
       const data = await res.json();
       const rows = Array.isArray(data?.rows) ? data.rows : [];
@@ -1616,7 +1623,7 @@ export default function App() {
                       className={appointmentsMenuFilter === "upcoming" ? "active-btn" : "secondary-btn"}
                       onClick={() => setAppointmentsMenuFilter("upcoming")}
                     >
-                      Proximas 48h
+                      Proximas
                     </button>
                     <button
                       type="button"
@@ -1653,7 +1660,7 @@ export default function App() {
                       {appointmentsRows.map((row) => (
                         <tr key={row.id}>
                           <td>{formatTimestamp(row.scheduled_at)}</td>
-                          <td>{row.lead_name || row.lead_session_id}</td>
+                          <td>{formatAppointmentLeadName(row, contactNameMap)}</td>
                           <td>{row.lead_phone || "-"}</td>
                           <td>{row.status}</td>
                           <td className="row-actions">
@@ -1696,7 +1703,7 @@ export default function App() {
                   <strong>{appointmentsRows.length}</strong>
                 </article>
                 <article className="kpi-card">
-                  <p>Proximas 48h</p>
+                  <p>Proximas</p>
                   <strong>{upcomingAppointmentsRows.length}</strong>
                 </article>
                 <article className="kpi-card">
@@ -1711,7 +1718,7 @@ export default function App() {
                     <p>
                       <strong>{formatTimestamp(row.scheduled_at)}</strong>
                     </p>
-                    <p>{row.lead_name || row.lead_session_id}</p>
+                    <p>{formatAppointmentLeadName(row, contactNameMap)}</p>
                     <p className="subtle">{row.lead_phone || "-"}</p>
                     <p className="subtle">Estado: {row.status}</p>
                   </article>
