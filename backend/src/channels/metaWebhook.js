@@ -63,7 +63,7 @@ function requestsHuman(text) {
 }
 
 function asksAddress(text) {
-  return /(direccion|direcci[oó]n|ubicacion|ubicaci[oó]n|donde estan|d[oó]nde est[aá]n|address|location|mapa|maps)/i.test(
+  return /(direccion|direcci[oó]n|ubicacion|ubicaci[oó]n|donde estan|d[oó]nde est[aá]n|address|location|where are you located|where.*located|mapa|maps)/i.test(
     String(text || "")
   );
 }
