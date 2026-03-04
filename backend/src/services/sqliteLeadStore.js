@@ -1606,6 +1606,23 @@ export async function updateAppointment(id, patch = {}) {
   return getAppointmentById(id);
 }
 
+export async function deleteAppointment(id) {
+  const existing = await getAppointmentById(id);
+  if (!existing) return false;
+
+  const safeId = Number(id);
+  if (!Number.isFinite(safeId) || safeId <= 0) return false;
+
+  if (usePgInventory && pgPool) {
+    await pgMessagingReady;
+    await pgPool.query("DELETE FROM appointments WHERE id = $1", [safeId]);
+    return true;
+  }
+
+  db.prepare("DELETE FROM appointments WHERE id = ?").run(safeId);
+  return true;
+}
+
 export async function findAppointmentsForReminder({ minutesBefore = 120 } = {}) {
   const now = new Date();
   const targetStart = new Date(now.getTime() + (minutesBefore - 1) * 60_000).toISOString();

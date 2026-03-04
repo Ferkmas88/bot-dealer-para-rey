@@ -19,6 +19,7 @@ const PANEL_PASSWORD = import.meta.env.VITE_PANEL_PASSWORD || "ReyDealer2026";
 const AUTH_STORAGE_KEY = "dealer-panel-auth";
 const AUTH_PERSIST_STORAGE_KEY = "dealer-panel-auth-persist-v1";
 const AUTH_PERSIST_TTL_MS = 1000 * 60 * 60 * 24 * 30;
+const UPCOMING_APPOINTMENTS_WINDOW_MS = 1000 * 60 * 60 * 48;
 const INBOX_SEEN_STORAGE_KEY = "dealer-inbox-seen-counts-v1";
 const CONTACT_NAME_MAP_STORAGE_KEY = "dealer-contact-name-map-v1";
 const INBOX_BADGE_POLL_MS = 7000;
@@ -185,6 +186,7 @@ function resolveAdminViewFromPathname() {
   if (typeof window === "undefined") return "crm";
   const path = window.location.pathname.toLowerCase().replace(/\/+$/, "") || "/";
   if (path === "/admin/whatsapp" || path === "/admin/whatpp" || path === "/wsp") return "inbox";
+  if (path === "/admin/citas" || path === "/citas") return "appointments";
   return "crm";
 }
 
@@ -199,10 +201,17 @@ function defaultViewForRouteMode(routeMode) {
   return routeMode === "whatsapp" ? "inbox" : "crm";
 }
 
+function resolveAdminTabFromPathname() {
+  if (typeof window === "undefined") return "inventory";
+  const path = window.location.pathname.toLowerCase().replace(/\/+$/, "") || "/";
+  if (path === "/admin/citas" || path === "/citas") return "appointments";
+  return "inventory";
+}
+
 function appointmentEmptyMessage(filter) {
   if (filter === "today") return "No hay citas para hoy.";
   if (filter === "date") return "No hay citas para la fecha seleccionada.";
-  if (filter === "upcoming") return "No hay citas proximas.";
+  if (filter === "upcoming") return "No hay citas proximas en las siguientes 48 horas.";
   return "No hay citas registradas.";
 }
 
@@ -220,7 +229,7 @@ export default function App() {
   const [authError, setAuthError] = useState("");
   const [routeMode] = useState(resolveRouteModeFromPathname);
   const [activeView, setActiveView] = useState(resolveAdminViewFromPathname);
-  const [adminView, setAdminView] = useState("inventory");
+  const [adminView, setAdminView] = useState(resolveAdminTabFromPathname);
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushStatus, setPushStatus] = useState("");
   const [notificationPermission, setNotificationPermission] = useState(() => {
@@ -558,11 +567,21 @@ export default function App() {
       setIsAuthenticated(true);
       setAuthError("");
       setPasswordInput("");
-      setAdminView("inventory");
+      setAdminView(resolveAdminTabFromPathname());
       setActiveView(defaultViewForRouteMode(routeModeRef.current));
       return;
     }
     setAuthError("Contrasena incorrecta.");
+  }
+
+  function handleAdminTabChange(nextView) {
+    const view = nextView === "appointments" ? "appointments" : "inventory";
+    setAdminView(view);
+    if (typeof window === "undefined") return;
+    const nextPath = view === "appointments" ? "/admin/citas" : "/admin";
+    if (window.location.pathname !== nextPath) {
+      window.history.replaceState({}, "", nextPath);
+    }
   }
 
   function handleLogout() {
@@ -738,7 +757,9 @@ export default function App() {
         params.set("from", from);
         params.set("to", to);
       } else if (appointmentsMenuFilter === "upcoming") {
+        const to = new Date(now.getTime() + UPCOMING_APPOINTMENTS_WINDOW_MS).toISOString();
         params.set("from", now.toISOString());
+        params.set("to", to);
       }
       const res = await fetch(`${APPOINTMENTS_API_URL}?${params.toString()}`);
       const data = await res.json();
@@ -753,7 +774,9 @@ export default function App() {
   async function loadUpcomingAppointments() {
     try {
       const params = new URLSearchParams({ limit: "500" });
-      params.set("from", new Date().toISOString());
+      const now = new Date();
+      params.set("from", now.toISOString());
+      params.set("to", new Date(now.getTime() + UPCOMING_APPOINTMENTS_WINDOW_MS).toISOString());
       const res = await fetch(`${APPOINTMENTS_API_URL}?${params.toString()}`);
       const data = await res.json();
       const rows = Array.isArray(data?.rows) ? data.rows : [];
@@ -814,6 +837,23 @@ export default function App() {
       await loadUpcomingAppointments();
     } catch {
       setAppointmentsError("No pude confirmar la cita.");
+    }
+  }
+
+  async function deleteAppointment(id) {
+    if (!id) return;
+    if (typeof window !== "undefined") {
+      const ok = window.confirm("Eliminar esta cita? Esta accion no se puede deshacer.");
+      if (!ok) return;
+    }
+    setAppointmentsError("");
+    try {
+      const res = await fetch(`${APPOINTMENTS_API_URL}/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("request failed");
+      await loadAppointments();
+      await loadUpcomingAppointments();
+    } catch {
+      setAppointmentsError("No pude eliminar la cita.");
     }
   }
 
@@ -1365,14 +1405,14 @@ export default function App() {
                 <button
                   type="button"
                   className={adminView === "inventory" ? "active-btn" : "secondary-btn"}
-                  onClick={() => setAdminView("inventory")}
+                  onClick={() => handleAdminTabChange("inventory")}
                 >
                   Inventario
                 </button>
                 <button
                   type="button"
                   className={adminView === "appointments" ? "active-btn" : "secondary-btn"}
-                  onClick={() => setAdminView("appointments")}
+                  onClick={() => handleAdminTabChange("appointments")}
                 >
                   Citas
                 </button>
@@ -1517,14 +1557,15 @@ export default function App() {
             </aside>
           </section>
           ) : (
-          <section className="crm-layout">
+          <section className="crm-layout appointments-layout">
             <section className="crm-main">
               <article className="panel crm-form-panel">
                 <div className="panel-head">
                   <h2>Nueva cita</h2>
+                  <p className="subtle">Agenda rapido con lead + fecha/hora.</p>
                 </div>
                 {appointmentsError ? <p className="error-text">{appointmentsError}</p> : null}
-                <form className="inventory-form" onSubmit={saveAppointment}>
+                <form className="appointment-create-form" onSubmit={saveAppointment}>
                   <input
                     list="leads-list"
                     placeholder="Lead session_id o telefono"
@@ -1559,7 +1600,7 @@ export default function App() {
               <article className="panel crm-table-panel">
                 <div className="panel-head">
                   <h2>Calendario de citas</h2>
-                  <div className="thread-actions">
+                  <div className="appointments-toolbar">
                     <button
                       type="button"
                       className={appointmentsMenuFilter === "today" ? "active-btn" : "secondary-btn"}
@@ -1575,7 +1616,7 @@ export default function App() {
                       className={appointmentsMenuFilter === "upcoming" ? "active-btn" : "secondary-btn"}
                       onClick={() => setAppointmentsMenuFilter("upcoming")}
                     >
-                      Proximas
+                      Proximas 48h
                     </button>
                     <button
                       type="button"
@@ -1624,6 +1665,13 @@ export default function App() {
                             >
                               Confirmar
                             </button>
+                            <button
+                              type="button"
+                              className="danger-btn"
+                              onClick={() => deleteAppointment(row.id)}
+                            >
+                              Eliminar
+                            </button>
                           </td>
                         </tr>
                       ))}
@@ -1642,9 +1690,20 @@ export default function App() {
               <div className="panel-head">
                 <h2>Resumen</h2>
               </div>
-              <p className="subtle">Citas visibles: {appointmentsRows.length}</p>
-              <p className="subtle">Proximas: {upcomingAppointmentsRows.length}</p>
-              <p className="subtle">Leads cargados: {leadRows.length}</p>
+              <section className="appointments-summary-grid">
+                <article className="kpi-card">
+                  <p>Citas visibles</p>
+                  <strong>{appointmentsRows.length}</strong>
+                </article>
+                <article className="kpi-card">
+                  <p>Proximas 48h</p>
+                  <strong>{upcomingAppointmentsRows.length}</strong>
+                </article>
+                <article className="kpi-card">
+                  <p>Leads</p>
+                  <strong>{leadRows.length}</strong>
+                </article>
+              </section>
               <p className="subtle">Al confirmar una cita se envia correo automatico al dueno.</p>
               <div className="appointments-side-list">
                 {upcomingAppointmentsRows.map((row) => (

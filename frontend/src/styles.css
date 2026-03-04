@@ -228,6 +228,66 @@ h2 {
   min-height: 720px;
 }
 
+.appointments-layout .crm-main {
+  gap: 8px;
+}
+
+.appointments-layout .crm-chat {
+  min-height: auto;
+  align-self: start;
+  position: sticky;
+  top: 12px;
+}
+
+.appointments-layout .panel {
+  padding: 10px;
+}
+
+.appointment-create-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.4fr) minmax(200px, 1fr) minmax(160px, 1fr) minmax(140px, auto);
+  gap: 6px;
+}
+
+.appointments-toolbar {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.appointments-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.appointments-layout .kpi-card {
+  padding: 8px;
+}
+
+.appointments-layout .kpi-card strong {
+  font-size: 1.1rem;
+  margin-top: 2px;
+}
+
+.appointments-layout .inventory-table th,
+.appointments-layout .inventory-table td {
+  padding: 8px;
+  font-size: 13px;
+}
+
+.appointments-layout .appointments-side-list {
+  margin-top: 8px;
+  max-height: 340px;
+  gap: 6px;
+  padding: 6px;
+}
+
+.appointments-layout .appointments-side-item {
+  padding: 6px;
+}
+
 .appointments-side-list {
   margin-top: 10px;
   border: 1px solid var(--line-soft);
@@ -596,6 +656,14 @@ button:disabled {
     grid-template-columns: repeat(2, minmax(110px, 1fr));
   }
 
+  .appointment-create-form {
+    grid-template-columns: 1fr;
+  }
+
+  .appointments-summary-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .thread-list,
   .thread-chat {
     min-height: 72vh;
@@ -624,7 +692,12 @@ button:disabled {
   .auth-form,
   .composer,
   .inventory-form,
+  .appointment-create-form,
   .manual-reply {
+    grid-template-columns: 1fr;
+  }
+
+  .appointments-summary-grid {
     grid-template-columns: 1fr;
   }
 }

@@ -7,6 +7,7 @@ import { z } from "zod";
 import {
   createInventoryUnit,
   createAppointment,
+  deleteAppointment,
   deleteInventoryUnit,
   getAppointmentById,
   getLatestOpenAppointmentForLead,
@@ -294,6 +295,12 @@ dealerDbAdminRouter.patch("/dealer/db/appointments/:id", async (req, res) => {
   const row = await updateAppointment(req.params.id, parsed.data);
   if (!row) return res.status(404).json({ error: "Appointment not found" });
   return res.json({ row });
+});
+
+dealerDbAdminRouter.delete("/dealer/db/appointments/:id", async (req, res) => {
+  const deleted = await deleteAppointment(req.params.id);
+  if (!deleted) return res.status(404).json({ error: "Appointment not found" });
+  return res.json({ ok: true });
 });
 
 dealerDbAdminRouter.post("/dealer/db/appointments/:id/confirm", async (req, res) => {
