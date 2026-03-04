@@ -200,6 +200,13 @@ function defaultViewForRouteMode(routeMode) {
   return routeMode === "whatsapp" ? "inbox" : "crm";
 }
 
+function appointmentEmptyMessage(filter) {
+  if (filter === "today") return "No hay citas para hoy.";
+  if (filter === "date") return "No hay citas para la fecha seleccionada.";
+  if (filter === "upcoming") return "No hay citas proximas.";
+  return "No hay citas registradas.";
+}
+
 export default function App() {
   const [isMobile, setIsMobile] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -243,7 +250,7 @@ export default function App() {
   const [upcomingAppointmentsRows, setUpcomingAppointmentsRows] = useState([]);
   const [appointmentsLoading, setAppointmentsLoading] = useState(false);
   const [appointmentsError, setAppointmentsError] = useState("");
-  const [appointmentsMenuFilter, setAppointmentsMenuFilter] = useState("today");
+  const [appointmentsMenuFilter, setAppointmentsMenuFilter] = useState("all");
   const [appointmentsDate, setAppointmentsDate] = useState(() => toDateInputValue(new Date()));
   const [leadRows, setLeadRows] = useState([]);
   const [appointmentForm, setAppointmentForm] = useState({
@@ -1628,7 +1635,7 @@ export default function App() {
                       ))}
                       {!appointmentsRows.length && !appointmentsLoading ? (
                         <tr>
-                          <td colSpan={5}>No hay citas para este dia.</td>
+                          <td colSpan={5}>{appointmentEmptyMessage(appointmentsMenuFilter)}</td>
                         </tr>
                       ) : null}
                     </tbody>

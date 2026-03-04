@@ -29,6 +29,7 @@ const FIRST_CONTACT_MESSAGE =
   "• Conectarte directamente con Rey\n" +
   "• Contactar a nuestro mecánico";
 const DEALER_ADDRESS_TEXT = "3510 Dixie Hwy, Louisville, KY 40216";
+const MECHANIC_CONTACT_REPLY = "Sobre el mecanico: pronto estara disponible su contacto.";
 const inboundMessageCache = new Map();
 const INBOUND_DEDUP_TTL_MS = 10 * 60 * 1000;
 
@@ -100,7 +101,7 @@ function detectLanguage(text) {
 }
 
 function isGreetingOnlyMessage(text) {
-  return /^(hola+|hello+|hi+|buenas|buenos dias|buenas tardes|buenas noches)\s*$/i.test(String(text || "").trim());
+  return /^(hola+(\s+\w+)?|hello+|hi+|hey+|holi+|ola+|buenas|buen dia|buenos dias|buenas tardes|buenas noches|saludos|que tal|hola bot|good morning|good evening)\s*$/i.test(String(text || "").trim());
 }
 
 function inferLeadStatus(text) {
@@ -123,6 +124,10 @@ function asksAddress(text) {
   return /(direccion|direcci[oó]n|ubicacion|ubicaci[oó]n|donde estan|d[oó]nde est[aá]n|address|location|mapa|maps)/i.test(
     String(text || "")
   );
+}
+
+function asksMechanic(text) {
+  return /(mecanico|mec[aá]nico|mechanic|servicio mecanico|servicio mec[aá]nico|taller)/i.test(String(text || ""));
 }
 
 function buildNextAppointmentOptions() {
@@ -169,7 +174,7 @@ function formatOptionLine(value) {
 
 function parseRequestedDateTime(text) {
   const raw = String(text || "").toLowerCase();
-  const dayOffset = /manana|mañana|tomorrow/.test(raw) ? 1 : /hoy|today/.test(raw) ? 0 : null;
+  const dayOffset = /manana|mañana|ma\?ana|tomorrow/.test(raw) ? 1 : /hoy|today/.test(raw) ? 0 : null;
   const parsedTime = parseRequestedTime(raw);
   if (dayOffset === null || !parsedTime) return null;
 
@@ -182,7 +187,7 @@ function parseRequestedDateTime(text) {
 function parseRequestedDay(text) {
   const raw = String(text || "").toLowerCase();
   if (/hoy|today/.test(raw)) return "hoy";
-  if (/manana|mañana|tomorrow/.test(raw)) return "manana";
+  if (/manana|mañana|ma\?ana|tomorrow/.test(raw)) return "manana";
   return null;
 }
 
@@ -262,13 +267,13 @@ function extractLooseCustomerName(text) {
   if (!normalized) return null;
   const lower = normalized.toLowerCase();
   if (
-    /^(hola|hello|hi|ok|okay|si|yes|no|quiero|cita|agendar|agenda|hoy|manana|mañana|confirmar|reprogramar|cancelar)$/.test(
+    /^(hola|hello|hi|hey|holi|ola|saludos|que tal|hola bot|good morning|good evening|buen dia|ok|okay|si|yes|no|quiero|cita|agendar|agenda|hoy|manana|mañana|ma\?ana|confirmar|reprogramar|cancelar)$/.test(
       lower
     )
   ) {
     return null;
   }
-  if (/(quiero|cita|agendar|agenda|appointment|carro|auto|pickup|suv|sedan|hoy|manana|mañana|por la tarde)/i.test(lower)) {
+  if (/(quiero|cita|agendar|agenda|appointment|mecanico|mec[aá]nico|servicio|carro|auto|pickup|suv|sedan|hoy|manana|mañana|ma\?ana|por la tarde)/i.test(lower)) {
     return null;
   }
   const tokens = normalized.split(/\s+/).filter(Boolean);
@@ -328,7 +333,7 @@ async function handleAppointmentFlow({ sessionId, incomingText, lead = null }) {
     });
     return {
       handled: true,
-      reply: `Listo, tu cita quedo confirmada para ${formatOptionLine(selectedAt)}. Si quieres cambiarla, dime reprogramar.`
+      reply: `Listo, tu cita quedo confirmada para ${formatOptionLine(selectedAt)}.\nDireccion: ${DEALER_ADDRESS_TEXT}\nSi quieres cambiarla, dime reprogramar.`
     };
   }
 
@@ -359,7 +364,7 @@ async function handleAppointmentFlow({ sessionId, incomingText, lead = null }) {
     });
     return {
       handled: true,
-      reply: `Perfecto, tu cita quedo confirmada para ${formatOptionLine(requestedAt)}.\nTelefono de contacto: ${lead?.phone || "compartemelo por favor"}.`
+      reply: `Perfecto, tu cita quedo confirmada para ${formatOptionLine(requestedAt)}.\nDireccion: ${DEALER_ADDRESS_TEXT}\nTelefono de contacto: ${lead?.phone || "compartemelo por favor"}.`
     };
   }
 
@@ -391,7 +396,7 @@ async function handleAppointmentFlow({ sessionId, incomingText, lead = null }) {
     });
     return {
       handled: true,
-      reply: "Perfecto, cita confirmada. Te esperamos. Si necesitas cambiar horario, dime reprogramar."
+      reply: `Perfecto, cita confirmada para ${formatOptionLine(openAppt.scheduled_at)}.\nDireccion: ${DEALER_ADDRESS_TEXT}\nSi necesitas cambiar horario, dime reprogramar.`
     };
   }
 
@@ -440,7 +445,14 @@ async function handleAppointmentFlow({ sessionId, incomingText, lead = null }) {
     const status = String(openAppt.status || "PENDING").toUpperCase();
     return {
       handled: true,
-      reply: `Si, tienes una cita ${status} para ${formatOptionLine(openAppt.scheduled_at)}. Si quieres cambiarla, responde reprogramar.`
+      reply: `Si, tienes una cita ${status} para ${formatOptionLine(openAppt.scheduled_at)}.\nDireccion: ${DEALER_ADDRESS_TEXT}\nSi quieres cambiarla, responde reprogramar.`
+    };
+  }
+
+  if (!openAppt && asksOwnAppointment(text)) {
+    return {
+      handled: true,
+      reply: "No veo una cita activa en este momento. Si quieres, te la agendo ahora mismo. Dime dia y hora exacta."
     };
   }
 
@@ -475,7 +487,7 @@ async function handleAppointmentFlow({ sessionId, incomingText, lead = null }) {
     });
     return {
       handled: true,
-      reply: `Perfecto, te agende para ${formatOptionLine(requestedAt)}.\nTelefono de contacto: ${lead?.phone || "compartemelo por favor"}.\nSi quieres cambiar el horario, dime reprogramar.`
+      reply: `Perfecto, te agende para ${formatOptionLine(requestedAt)}.\nDireccion: ${DEALER_ADDRESS_TEXT}\nTelefono de contacto: ${lead?.phone || "compartemelo por favor"}.\nSi quieres cambiar el horario, dime reprogramar.`
     };
   }
 
@@ -600,6 +612,24 @@ twilioWebhookRouter.post("/whatsapp", async (req, res) => {
       });
       const twiml = new twilio.twiml.MessagingResponse();
       twiml.message().body(addressReply);
+      return res.type("text/xml").send(twiml.toString());
+    }
+
+    if (asksMechanic(incomingText)) {
+      const mechanicReply = MECHANIC_CONTACT_REPLY;
+      await persistIncomingUserMessage({
+        sessionId,
+        userMessage: incomingText,
+        source: "mechanic-fastpath"
+      });
+      await persistOutgoingAssistantMessage({
+        sessionId,
+        assistantMessage: mechanicReply,
+        source: "mechanic-fastpath",
+        intent: "service_info"
+      });
+      const twiml = new twilio.twiml.MessagingResponse();
+      twiml.message().body(mechanicReply);
       return res.type("text/xml").send(twiml.toString());
     }
 
