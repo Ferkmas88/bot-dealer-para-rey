@@ -422,6 +422,20 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    if (routeMode !== "whatsapp" || !isMobile) return undefined;
+
+    const onPopState = () => {
+      if (mobileInboxPanel === "chat") {
+        setMobileInboxPanel("list");
+      }
+    };
+
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [routeMode, isMobile, mobileInboxPanel]);
+
+  useEffect(() => {
     if (!isAuthenticated) return;
     let isMounted = true;
 
@@ -551,16 +565,23 @@ export default function App() {
 
   useEffect(() => {
     if (activeView !== "inbox") return;
-    if (routeMode !== "whatsapp") return;
     shouldStickToBottomRef.current = true;
     scrollThreadToBottom(true);
-  }, [selectedSessionId, activeView, routeMode]);
+  }, [selectedSessionId, activeView]);
 
   useEffect(() => {
     if (activeView !== "inbox") return;
-    if (routeMode !== "whatsapp") return;
-    scrollThreadToBottom(false);
-  }, [selectedMessages, activeView, routeMode]);
+    shouldStickToBottomRef.current = true;
+    scrollThreadToBottom(true);
+  }, [selectedMessages, activeView]);
+
+  useEffect(() => {
+    if (activeView !== "inbox") return;
+    if (!isMobile) return;
+    if (mobileInboxPanel !== "chat") return;
+    shouldStickToBottomRef.current = true;
+    scrollThreadToBottom(true);
+  }, [mobileInboxPanel, isMobile, activeView]);
 
   function handleLogin(e) {
     e.preventDefault();
@@ -1001,7 +1022,12 @@ export default function App() {
 
   async function handleSelectConversation(targetSessionId) {
     setSelectedSessionId(targetSessionId);
-    if (isMobile) setMobileInboxPanel("chat");
+    if (isMobile) {
+      if (typeof window !== "undefined" && routeMode === "whatsapp" && mobileInboxPanel !== "chat") {
+        window.history.pushState({ wspChat: true, sessionId: targetSessionId }, "", window.location.href);
+      }
+      setMobileInboxPanel("chat");
+    }
     setManualReplyError("");
     setManualReplySuccess("");
     setLeadActionError("");

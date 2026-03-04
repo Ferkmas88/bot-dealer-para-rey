@@ -871,7 +871,7 @@ body[data-route-mode="whatsapp"] .thread-bubble p {
 
 body[data-route-mode="whatsapp"] .manual-reply {
   margin: 0;
-  padding: 10px 12px 12px;
+  padding: 10px 12px calc(env(safe-area-inset-bottom, 0px) + 18px);
   background: #202c33;
   border-top: 1px solid #2a3942;
 }
@@ -912,10 +912,11 @@ body[data-route-mode="whatsapp"] .thread-chat-head .subtle {
 
   body[data-route-mode="whatsapp"] .thread-messages {
     padding: 10px;
+    padding-bottom: 14px;
   }
 
   body[data-route-mode="whatsapp"] .manual-reply {
     grid-template-columns: 1fr auto;
-    padding-bottom: max(10px, env(safe-area-inset-bottom));
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 22px);
   }
 }
