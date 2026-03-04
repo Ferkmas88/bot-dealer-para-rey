@@ -21,6 +21,11 @@ const AUTH_PERSIST_STORAGE_KEY = "dealer-panel-auth-persist-v1";
 const AUTH_PERSIST_TTL_MS = 1000 * 60 * 60 * 24 * 30;
 const INBOX_SEEN_STORAGE_KEY = "dealer-inbox-seen-counts-v1";
 const CONTACT_NAME_MAP_STORAGE_KEY = "dealer-contact-name-map-v1";
+const INBOX_CONVERSATIONS_CACHE_KEY = "dealer-inbox-conversations-cache-v1";
+const INBOX_LAST_SESSION_STORAGE_KEY = "dealer-inbox-last-session-v1";
+const INBOX_MESSAGES_CACHE_INDEX_KEY = "dealer-inbox-messages-cache-index-v1";
+const INBOX_MESSAGES_CACHE_PREFIX = "dealer-inbox-messages-cache-v1:";
+const INBOX_MESSAGES_CACHE_MAX_THREADS = 40;
 const INBOX_BADGE_POLL_MS = 7000;
 const INBOX_LIST_POLL_MS = 5000;
 const INBOX_MESSAGES_POLL_MS = 3500;
@@ -164,6 +169,108 @@ function saveContactNameMap(value) {
   }
 }
 
+function loadConversationsCache() {
+  try {
+    const raw = localStorage.getItem(INBOX_CONVERSATIONS_CACHE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveConversationsCache(rows) {
+  try {
+    localStorage.setItem(INBOX_CONVERSATIONS_CACHE_KEY, JSON.stringify(Array.isArray(rows) ? rows : []));
+  } catch {
+    // noop
+  }
+}
+
+function loadLastSelectedSessionId() {
+  try {
+    return String(localStorage.getItem(INBOX_LAST_SESSION_STORAGE_KEY) || "");
+  } catch {
+    return "";
+  }
+}
+
+function saveLastSelectedSessionId(sessionId) {
+  try {
+    if (!sessionId) {
+      localStorage.removeItem(INBOX_LAST_SESSION_STORAGE_KEY);
+      return;
+    }
+    localStorage.setItem(INBOX_LAST_SESSION_STORAGE_KEY, String(sessionId));
+  } catch {
+    // noop
+  }
+}
+
+function loadMessagesCacheIndex() {
+  try {
+    const raw = localStorage.getItem(INBOX_MESSAGES_CACHE_INDEX_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveMessagesCacheIndex(index) {
+  try {
+    localStorage.setItem(INBOX_MESSAGES_CACHE_INDEX_KEY, JSON.stringify(index || {}));
+  } catch {
+    // noop
+  }
+}
+
+function loadMessagesCacheForSession(sessionId) {
+  if (!sessionId) return null;
+  try {
+    const raw = localStorage.getItem(`${INBOX_MESSAGES_CACHE_PREFIX}${sessionId}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    return {
+      rows: Array.isArray(parsed.rows) ? parsed.rows : [],
+      settings: parsed.settings && typeof parsed.settings === "object" ? parsed.settings : null
+    };
+  } catch {
+    return null;
+  }
+}
+
+function saveMessagesCacheForSession(sessionId, rows, settings = null) {
+  if (!sessionId) return;
+  try {
+    localStorage.setItem(
+      `${INBOX_MESSAGES_CACHE_PREFIX}${sessionId}`,
+      JSON.stringify({
+        rows: Array.isArray(rows) ? rows : [],
+        settings: settings && typeof settings === "object" ? settings : null
+      })
+    );
+
+    const nextIndex = { ...loadMessagesCacheIndex(), [sessionId]: Date.now() };
+    const entries = Object.entries(nextIndex).sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0));
+    const keep = entries.slice(0, INBOX_MESSAGES_CACHE_MAX_THREADS).map(([id]) => id);
+    const keepSet = new Set(keep);
+
+    for (const [id] of entries) {
+      if (keepSet.has(id)) continue;
+      localStorage.removeItem(`${INBOX_MESSAGES_CACHE_PREFIX}${id}`);
+      delete nextIndex[id];
+    }
+
+    saveMessagesCacheIndex(nextIndex);
+  } catch {
+    // noop
+  }
+}
+
 function loadPersistedAuth() {
   try {
     const raw = localStorage.getItem(AUTH_PERSIST_STORAGE_KEY);
@@ -278,10 +385,10 @@ export default function App() {
   });
   const [savingAppointment, setSavingAppointment] = useState(false);
 
-  const [conversationRows, setConversationRows] = useState([]);
+  const [conversationRows, setConversationRows] = useState(loadConversationsCache);
   const [conversationsLoading, setConversationsLoading] = useState(false);
   const [conversationsError, setConversationsError] = useState("");
-  const [selectedSessionId, setSelectedSessionId] = useState("");
+  const [selectedSessionId, setSelectedSessionId] = useState(loadLastSelectedSessionId);
   const [selectedMessages, setSelectedMessages] = useState([]);
   const [selectedSettings, setSelectedSettings] = useState({ bot_enabled: 1, last_read_at: null });
   const [selectedLead, setSelectedLead] = useState(null);
@@ -331,6 +438,10 @@ export default function App() {
     saveContactNameMap(contactNameMap);
   }, [contactNameMap]);
 
+  useEffect(() => {
+    saveConversationsCache(conversationRows);
+  }, [conversationRows]);
+
   const kpis = useMemo(() => {
     const total = inventoryRows.length;
     const available = inventoryRows.filter((row) => row.status === "available").length;
@@ -351,6 +462,7 @@ export default function App() {
 
   useEffect(() => {
     selectedSessionRef.current = selectedSessionId;
+    saveLastSelectedSessionId(selectedSessionId);
   }, [selectedSessionId]);
 
   useEffect(() => {
@@ -516,6 +628,16 @@ export default function App() {
   }, [selectedSessionId, activeView]);
 
   useEffect(() => {
+    if (!selectedSessionId || activeView !== "inbox") return;
+    const cached = loadMessagesCacheForSession(selectedSessionId);
+    if (!cached) return;
+    setSelectedMessages(cached.rows);
+    if (cached.settings) {
+      setSelectedSettings(cached.settings);
+    }
+  }, [selectedSessionId, activeView]);
+
+  useEffect(() => {
     if (!isAuthenticated || activeView !== "inbox") return undefined;
     if (typeof window === "undefined") return undefined;
 
@@ -571,8 +693,7 @@ export default function App() {
 
   useEffect(() => {
     if (activeView !== "inbox") return;
-    shouldStickToBottomRef.current = true;
-    scrollThreadToBottom(true);
+    scrollThreadToBottom(false);
   }, [selectedMessages, activeView]);
 
   useEffect(() => {
@@ -977,8 +1098,11 @@ export default function App() {
       });
       const data = await res.json();
       if (mountedRef && !mountedRef()) return;
-      setSelectedMessages(Array.isArray(data?.rows) ? data.rows : []);
-      setSelectedSettings(data?.settings || { bot_enabled: 1, last_read_at: null });
+      const rows = Array.isArray(data?.rows) ? data.rows : [];
+      const settings = data?.settings || { bot_enabled: 1, last_read_at: null };
+      setSelectedMessages(rows);
+      setSelectedSettings(settings);
+      saveMessagesCacheForSession(targetSessionId, rows, settings);
       await loadConversationAppointment(targetSessionId, { mountedRef });
       if (routeMode === "whatsapp") {
         scrollThreadToBottom();
