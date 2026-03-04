@@ -783,12 +783,12 @@ body[data-route-mode="whatsapp"] .thread-bubble {
 body[data-route-mode="whatsapp"] .thread-bubble.assistant {
   border-color: #005c4b;
   background: #005c4b;
-  margin-left: auto;
+  margin-right: auto;
   text-align: left;
 }
 
 body[data-route-mode="whatsapp"] .thread-bubble.user {
-  margin-right: auto;
+  margin-left: auto;
 }
 
 body[data-route-mode="whatsapp"] .thread-bubble p {
