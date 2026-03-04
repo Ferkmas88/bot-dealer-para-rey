@@ -366,7 +366,8 @@ dealerDbAdminRouter.post("/dealer/db/conversations/create-contact", async (req, 
 dealerDbAdminRouter.get("/dealer/db/conversations/:sessionId/messages", async (req, res) => {
   const sessionId = req.params.sessionId;
   const limit = typeof req.query.limit === "string" ? Number(req.query.limit) : 500;
-  const rows = await listDealerMessagesBySession(sessionId, { limit });
+  const beforeId = typeof req.query.before_id === "string" ? Number(req.query.before_id) : null;
+  const rows = await listDealerMessagesBySession(sessionId, { limit, beforeId });
   const settings = await getConversationSettings(sessionId);
   return res.json({ rows, settings });
 });

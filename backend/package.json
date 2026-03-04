@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
-    "dev:wa": "concurrently \"npm run dev\" \"npx localtunnel --port 4000\""
+    "dev:wa": "concurrently \"npm run dev\" \"npx localtunnel --port 4000\"",
+    "db:repair": "node scripts/repair-db.mjs"
   },
   "dependencies": {
     "@langchain/core": "^0.3.0",

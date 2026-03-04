@@ -56,6 +56,10 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_messages_session_created
   ON messages(session_id, created_at);
+  CREATE INDEX IF NOT EXISTS idx_messages_session_role_created
+  ON messages(session_id, role, created_at);
+  CREATE INDEX IF NOT EXISTS idx_messages_session_id
+  ON messages(session_id, id DESC);
 
   CREATE TABLE IF NOT EXISTS feedback (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -122,6 +126,12 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_appointments_lead
   ON appointments(lead_session_id, updated_at);
+  CREATE INDEX IF NOT EXISTS idx_appointments_lead_status_scheduled
+  ON appointments(lead_session_id, status, scheduled_at);
+  CREATE INDEX IF NOT EXISTS idx_leads_last_message_at
+  ON leads(last_message_at);
+  CREATE INDEX IF NOT EXISTS idx_leads_phone
+  ON leads(phone);
 `);
 
 function ensureSqliteColumn(tableName, columnName, definition) {
@@ -319,6 +329,14 @@ async function ensurePgMessagingSchema() {
     CREATE INDEX IF NOT EXISTS idx_messages_session_created
     ON messages(session_id, created_at);
   `);
+  await pgPool.query(`
+    CREATE INDEX IF NOT EXISTS idx_messages_session_role_created
+    ON messages(session_id, role, created_at DESC);
+  `);
+  await pgPool.query(`
+    CREATE INDEX IF NOT EXISTS idx_messages_session_id
+    ON messages(session_id, id DESC);
+  `);
 
   await pgPool.query(`
     CREATE TABLE IF NOT EXISTS feedback (
@@ -390,6 +408,18 @@ async function ensurePgMessagingSchema() {
   await pgPool.query(`
     CREATE INDEX IF NOT EXISTS idx_appointments_lead
     ON appointments(lead_session_id, updated_at)
+  `);
+  await pgPool.query(`
+    CREATE INDEX IF NOT EXISTS idx_appointments_lead_status_scheduled
+    ON appointments(lead_session_id, status, scheduled_at DESC)
+  `);
+  await pgPool.query(`
+    CREATE INDEX IF NOT EXISTS idx_leads_last_message_at
+    ON leads(last_message_at DESC)
+  `);
+  await pgPool.query(`
+    CREATE INDEX IF NOT EXISTS idx_leads_phone
+    ON leads(phone)
   `);
 }
 
@@ -883,7 +913,7 @@ export async function listDealerConversations({ limit = 100, query = "" } = {}) 
         FROM messages m
         LEFT JOIN conversation_settings s ON s.session_id = m.session_id
         LEFT JOIN leads l ON l.session_id = m.session_id
-        ${hasQuery ? "WHERE LOWER(m.session_id) LIKE $1 " : ""}
+        ${hasQuery ? "WHERE (LOWER(m.session_id) LIKE $1 OR LOWER(COALESCE(l.name,'')) LIKE $1 OR LOWER(COALESCE(l.phone,'')) LIKE $1)" : ""}
         GROUP BY m.session_id, s.bot_enabled, s.last_read_at, l.status, l.priority, l.mode, l.name, l.phone
         ORDER BY updated_at DESC
         LIMIT $${hasQuery ? 2 : 1}
@@ -932,7 +962,7 @@ export async function listDealerConversations({ limit = 100, query = "" } = {}) 
       FROM messages m
       LEFT JOIN conversation_settings s ON s.session_id = m.session_id
       LEFT JOIN leads l ON l.session_id = m.session_id
-      ${hasQuery ? "WHERE LOWER(m.session_id) LIKE ? " : ""}
+      ${hasQuery ? "WHERE (LOWER(m.session_id) LIKE ? OR LOWER(COALESCE(l.name,'')) LIKE ? OR LOWER(COALESCE(l.phone,'')) LIKE ?) " : ""}
       GROUP BY m.session_id, s.bot_enabled, s.last_read_at, l.status, l.priority, l.mode, l.name, l.phone
       ORDER BY updated_at DESC
       LIMIT ?
@@ -940,7 +970,7 @@ export async function listDealerConversations({ limit = 100, query = "" } = {}) 
 
   const statement = db.prepare(sql);
   const rows = hasQuery
-    ? statement.all(`%${normalizedQuery}%`, safeLimit)
+    ? statement.all(`%${normalizedQuery}%`, `%${normalizedQuery}%`, `%${normalizedQuery}%`, safeLimit)
     : statement.all(safeLimit);
 
   return rows;
@@ -1031,51 +1061,91 @@ export async function hasWelcomeMessageSent(sessionId) {
   return Boolean(row);
 }
 
-export async function listDealerMessagesBySession(sessionId, { limit = 500 } = {}) {
-  const safeLimit = Number.isFinite(Number(limit)) ? Math.max(1, Math.min(2000, Number(limit))) : 500;
+export async function listDealerMessagesBySession(sessionId, { limit = 200, beforeId = null } = {}) {
+  const safeLimit = Number.isFinite(Number(limit)) ? Math.max(1, Math.min(1000, Number(limit))) : 200;
+  const safeBeforeId = Number.isFinite(Number(beforeId)) ? Number(beforeId) : null;
 
   if (usePgInventory && pgPool) {
     await pgMessagingReady;
-    const result = await pgPool.query(
-      `
-        SELECT
-          id,
-          session_id,
-          role,
-          content,
-          intent,
-          source,
-          created_at
-        FROM messages
-        WHERE session_id = $1
-        ORDER BY created_at ASC, id ASC
-        LIMIT $2
-      `,
-      [sessionId, safeLimit]
-    );
-    return result.rows || [];
+    const result = safeBeforeId
+      ? await pgPool.query(
+          `
+            SELECT
+              id,
+              session_id,
+              role,
+              content,
+              intent,
+              source,
+              created_at
+            FROM messages
+            WHERE session_id = $1
+              AND id < $2
+            ORDER BY id DESC
+            LIMIT $3
+          `,
+          [sessionId, safeBeforeId, safeLimit]
+        )
+      : await pgPool.query(
+          `
+            SELECT
+              id,
+              session_id,
+              role,
+              content,
+              intent,
+              source,
+              created_at
+            FROM messages
+            WHERE session_id = $1
+            ORDER BY id DESC
+            LIMIT $2
+          `,
+          [sessionId, safeLimit]
+        );
+    return (result.rows || []).reverse();
   }
 
-  const rows = db
-    .prepare(
-      `
-      SELECT
-        id,
-        session_id,
-        role,
-        content,
-        intent,
-        source,
-        created_at
-      FROM messages
-      WHERE session_id = ?
-      ORDER BY created_at ASC, id ASC
-      LIMIT ?
-      `
-    )
-    .all(sessionId, safeLimit);
+  const rows = safeBeforeId
+    ? db
+        .prepare(
+          `
+          SELECT
+            id,
+            session_id,
+            role,
+            content,
+            intent,
+            source,
+            created_at
+          FROM messages
+          WHERE session_id = ?
+            AND id < ?
+          ORDER BY id DESC
+          LIMIT ?
+          `
+        )
+        .all(sessionId, safeBeforeId, safeLimit)
+    : db
+        .prepare(
+          `
+          SELECT
+            id,
+            session_id,
+            role,
+            content,
+            intent,
+            source,
+            created_at
+          FROM messages
+          WHERE session_id = ?
+          ORDER BY id DESC
+          LIMIT ?
+          `
+        )
+        .all(sessionId, safeLimit);
 
-  return rows;
+  return rows.reverse();
 }
 
 const LEAD_PIPELINE_STATUSES = new Set([

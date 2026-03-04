@@ -21,9 +21,9 @@ const AUTH_PERSIST_STORAGE_KEY = "dealer-panel-auth-persist-v1";
 const AUTH_PERSIST_TTL_MS = 1000 * 60 * 60 * 24 * 30;
 const INBOX_SEEN_STORAGE_KEY = "dealer-inbox-seen-counts-v1";
 const CONTACT_NAME_MAP_STORAGE_KEY = "dealer-contact-name-map-v1";
-const INBOX_BADGE_POLL_MS = 4000;
-const INBOX_LIST_POLL_MS = 3000;
-const INBOX_MESSAGES_POLL_MS = 2000;
+const INBOX_BADGE_POLL_MS = 7000;
+const INBOX_LIST_POLL_MS = 5000;
+const INBOX_MESSAGES_POLL_MS = 3500;
 const OPENING_PROMO_MESSAGE =
   "Hola. Soy el asistente automatico de Empire Rey Auto Sales. Estoy aqui 24/7 para ayudarte.\n\n" +
   "Puedo ayudarte a:\n\n" +
@@ -293,6 +293,7 @@ export default function App() {
   const routeModeRef = useRef(resolveRouteModeFromPathname());
   const selectedSessionRef = useRef("");
   const threadMessagesRef = useRef(null);
+  const shouldStickToBottomRef = useRef(true);
   const seenCountsRef = useRef(loadSeenCounts());
   const pushSupported =
     typeof window !== "undefined" &&
@@ -503,13 +504,26 @@ export default function App() {
     };
   }, [isAuthenticated, activeView]);
 
-  function scrollThreadToBottom() {
+  function isThreadNearBottom() {
+    const el = threadMessagesRef.current;
+    if (!el) return true;
+    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+    return distance < 90;
+  }
+
+  function handleThreadScroll() {
+    shouldStickToBottomRef.current = isThreadNearBottom();
+  }
+
+  function scrollThreadToBottom(force = false) {
     const el = threadMessagesRef.current;
     if (!el) return;
+    if (!force && !shouldStickToBottomRef.current) return;
     requestAnimationFrame(() => {
       el.scrollTop = el.scrollHeight;
       requestAnimationFrame(() => {
         el.scrollTop = el.scrollHeight;
+        shouldStickToBottomRef.current = true;
       });
     });
   }
@@ -517,8 +531,15 @@ export default function App() {
   useEffect(() => {
     if (activeView !== "inbox") return;
     if (routeMode !== "whatsapp") return;
-    scrollThreadToBottom();
-  }, [selectedMessages, selectedSessionId, activeView, routeMode]);
+    shouldStickToBottomRef.current = true;
+    scrollThreadToBottom(true);
+  }, [selectedSessionId, activeView, routeMode]);
+
+  useEffect(() => {
+    if (activeView !== "inbox") return;
+    if (routeMode !== "whatsapp") return;
+    scrollThreadToBottom(false);
+  }, [selectedMessages, activeView, routeMode]);
 
   function handleLogin(e) {
     e.preventDefault();
@@ -874,7 +895,7 @@ export default function App() {
     setMessagesError("");
     try {
       const encoded = encodeURIComponent(targetSessionId);
-      const res = await fetch(`${CONVERSATIONS_API_URL}/${encoded}/messages?limit=500`);
+      const res = await fetch(`${CONVERSATIONS_API_URL}/${encoded}/messages?limit=200`);
       const data = await res.json();
       if (mountedRef && !mountedRef()) return;
       setSelectedMessages(Array.isArray(data?.rows) ? data.rows : []);
@@ -1744,7 +1765,7 @@ export default function App() {
                   ) : null}
                 </div>
                 {messagesError ? <p className="error-text">{messagesError}</p> : null}
-                <div className="thread-messages" ref={threadMessagesRef}>
+                <div className="thread-messages" ref={threadMessagesRef} onScroll={handleThreadScroll}>
                   {selectedMessages.map((msg) => (
                     <article key={msg.id} className={`thread-bubble ${msg.role === "assistant" ? "assistant" : "user"}`}>
                       <div className="thread-bubble-top">
