@@ -820,7 +820,10 @@ export default function App() {
       if (searchQuery.trim()) {
         params.set("query", searchQuery.trim());
       }
-      const res = await fetch(`${CONVERSATIONS_API_URL}?${params.toString()}`);
+      params.set("_ts", String(Date.now()));
+      const res = await fetch(`${CONVERSATIONS_API_URL}?${params.toString()}`, {
+        cache: "no-store"
+      });
       const data = await res.json();
       const incomingRows = Array.isArray(data?.rows) ? data.rows : [];
       const seenCounts = { ...(seenCountsRef.current || {}) };
@@ -872,7 +875,10 @@ export default function App() {
     if (!targetSessionId) return;
     try {
       const encoded = encodeURIComponent(targetSessionId);
-      const res = await fetch(`${CONVERSATIONS_API_URL}/${encoded}/appointment`);
+      const ts = Date.now();
+      const res = await fetch(`${CONVERSATIONS_API_URL}/${encoded}/appointment?_ts=${ts}`, {
+        cache: "no-store"
+      });
       const data = await res.json();
       if (mountedRef && !mountedRef()) return;
       setSelectedLead(data?.lead || null);
@@ -891,7 +897,10 @@ export default function App() {
     setMessagesError("");
     try {
       const encoded = encodeURIComponent(targetSessionId);
-      const res = await fetch(`${CONVERSATIONS_API_URL}/${encoded}/messages?limit=200`);
+      const ts = Date.now();
+      const res = await fetch(`${CONVERSATIONS_API_URL}/${encoded}/messages?limit=200&_ts=${ts}`, {
+        cache: "no-store"
+      });
       const data = await res.json();
       if (mountedRef && !mountedRef()) return;
       setSelectedMessages(Array.isArray(data?.rows) ? data.rows : []);
