@@ -22,13 +22,12 @@ export const twilioWebhookRouter = express.Router();
 const cadenceBySession = new Map();
 const FIRST_CONTACT_MESSAGE =
   "Hola 👋\n" +
-  "Soy el asistente automatico de Empire Rey Auto Sales. Estoy disponible 24/7 para ayudarte.\n\n" +
+  "Soy el asistente automático de Empire Rey Auto Sales. Estoy disponible 24/7 para ayudarte.\n\n" +
   "Puedo ayudarte a:\n" +
   "• Encontrar el carro que necesitas\n" +
   "• Agendar una cita en el dealer\n" +
   "• Conectarte directamente con Rey\n" +
-  "• Contactar a nuestro mecanico\n" +
-  "• Responder dudas sobre credito, requisitos o down payment";
+  "• Contactar a nuestro mecánico";
 const DEALER_ADDRESS_TEXT = "3510 Dixie Hwy, Louisville, KY 40216";
 const inboundMessageCache = new Map();
 const INBOUND_DEDUP_TTL_MS = 10 * 60 * 1000;

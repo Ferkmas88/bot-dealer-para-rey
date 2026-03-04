@@ -26,13 +26,12 @@ const INBOX_LIST_POLL_MS = 5000;
 const INBOX_MESSAGES_POLL_MS = 3500;
 const OPENING_PROMO_MESSAGE =
   "Hola 👋\n" +
-  "Soy el asistente automatico de Empire Rey Auto Sales. Estoy disponible 24/7 para ayudarte.\n\n" +
+  "Soy el asistente automático de Empire Rey Auto Sales. Estoy disponible 24/7 para ayudarte.\n\n" +
   "Puedo ayudarte a:\n" +
   "• Encontrar el carro que necesitas\n" +
   "• Agendar una cita en el dealer\n" +
   "• Conectarte directamente con Rey\n" +
-  "• Contactar a nuestro mecanico\n" +
-  "• Responder dudas sobre credito, requisitos o down payment";
+  "• Contactar a nuestro mecánico";
 
 const EMPTY_FORM = {
   make: "",
