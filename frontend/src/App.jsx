@@ -42,8 +42,7 @@ const EMPTY_FORM = {
   transmission: "",
   fuel_type: "",
   color: "",
-  status: "available",
-  featured: 0
+  status: "available"
 };
 
 function formatSessionLabel(sessionId) {
@@ -316,9 +315,9 @@ export default function App() {
   const kpis = useMemo(() => {
     const total = inventoryRows.length;
     const available = inventoryRows.filter((row) => row.status === "available").length;
+    const reserved = inventoryRows.filter((row) => row.status === "reserved").length;
     const sold = inventoryRows.filter((row) => row.status === "sold").length;
-    const featured = inventoryRows.filter((row) => Number(row.featured) === 1).length;
-    return { total, available, sold, featured };
+    return { total, available, reserved, sold };
   }, [inventoryRows]);
 
   const selectedThread = useMemo(
@@ -1248,8 +1247,7 @@ export default function App() {
       transmission: row.transmission || "",
       fuel_type: row.fuel_type || "",
       color: row.color || "",
-      status: row.status || "available",
-      featured: Number(row.featured) ? 1 : 0
+      status: row.status || "available"
     });
     setEditingId(row.id);
   }
@@ -1263,7 +1261,7 @@ export default function App() {
       year: Number(inventoryForm.year),
       price: Number(inventoryForm.price),
       mileage: Number(inventoryForm.mileage),
-      featured: Number(inventoryForm.featured) ? 1 : 0
+      featured: 0
     };
 
     const method = editingId ? "PUT" : "POST";
@@ -1430,12 +1428,12 @@ export default function App() {
                   <strong>{kpis.available}</strong>
                 </article>
                 <article className="kpi-card">
-                  <p>Vendidos</p>
-                  <strong>{kpis.sold}</strong>
+                  <p>Reservados</p>
+                  <strong>{kpis.reserved}</strong>
                 </article>
                 <article className="kpi-card">
-                  <p>Destacados</p>
-                  <strong>{kpis.featured}</strong>
+                  <p>Vendidos</p>
+                  <strong>{kpis.sold}</strong>
                 </article>
               </section>
 
@@ -1457,13 +1455,9 @@ export default function App() {
                   <input placeholder="Combustible" value={inventoryForm.fuel_type} onChange={(e) => setInventoryForm((prev) => ({ ...prev, fuel_type: e.target.value }))} required />
                   <input placeholder="Color" value={inventoryForm.color} onChange={(e) => setInventoryForm((prev) => ({ ...prev, color: e.target.value }))} required />
                   <select value={inventoryForm.status} onChange={(e) => setInventoryForm((prev) => ({ ...prev, status: e.target.value }))}>
-                    <option value="available">available</option>
-                    <option value="reserved">reserved</option>
-                    <option value="sold">sold</option>
-                  </select>
-                  <select value={inventoryForm.featured} onChange={(e) => setInventoryForm((prev) => ({ ...prev, featured: Number(e.target.value) }))}>
-                    <option value={0}>No destacado</option>
-                    <option value={1}>Destacado</option>
+                    <option value="available">Disponible</option>
+                    <option value="reserved">Reservado</option>
+                    <option value="sold">Vendido</option>
                   </select>
                   <button type="submit">{editingId ? "Actualizar unidad" : "Crear unidad"}</button>
                 </form>
