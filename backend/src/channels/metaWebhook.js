@@ -45,6 +45,13 @@ function inferLeadStatus(text) {
   return "NEW";
 }
 
+function mergeLeadStatus(existingStatus, inferredStatus) {
+  const current = String(existingStatus || "").trim().toUpperCase();
+  const next = String(inferredStatus || "NEW").trim().toUpperCase();
+  if (current === "BOOKED" || current === "CLOSED_WON" || current === "CLOSED_LOST") return current;
+  return next || "NEW";
+}
+
 function isHotLead(text) {
   return /(voy hoy|hoy mismo|direccion|llamame|call me|down|enganche|ahora|urgent|urgente)/i.test(text || "");
 }
@@ -582,13 +589,14 @@ metaWebhookRouter.post("/whatsapp", async (req, res) => {
       const wantsHuman = requestsHuman(msg.body);
       const handoffToHuman = hotLead || wantsHuman;
       const inferredStatus = inferLeadStatus(msg.body);
+      const nextLeadStatus = mergeLeadStatus(existingLead?.status, inferredStatus);
       await upsertLeadProfile({
         sessionId,
         phone: `+${msg.from}`,
         name: msg.profileName || null,
         source: "whatsapp",
         language: detectLanguage(msg.body),
-        status: inferredStatus,
+        status: nextLeadStatus,
         priority: handoffToHuman ? "HIGH" : "NORMAL",
         mode: botEnabled && !handoffToHuman ? "BOT" : "HUMAN",
         lastMessageAt: new Date().toISOString()

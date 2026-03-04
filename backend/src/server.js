@@ -15,6 +15,7 @@ import { runStartupChecks } from "./services/runtimeChecks.js";
 
 const app = express();
 const port = process.env.PORT || 4000;
+const releaseTag = "welcome-fix-2026-03-03-b";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const frontendDistPath = path.resolve(__dirname, "../public");
@@ -24,7 +25,7 @@ app.use(express.json({ limit: "25mb" }));
 app.use(express.urlencoded({ extended: false, limit: "25mb" }));
 
 app.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "dealer-bot-backend" });
+  res.json({ ok: true, service: "dealer-bot-backend", release: releaseTag });
 });
 
 app.use("/api/chat", chatRouter);

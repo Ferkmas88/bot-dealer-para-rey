@@ -42,7 +42,15 @@ function isLowSignalMessage(text) {
   return false;
 }
 
+function isShortMeaningfulReply(text) {
+  const value = String(text || "").trim().toLowerCase();
+  return /^(ok|okay|si|sí|yes|no|thx|thanks|\?)$/.test(value);
+}
+
 function shouldSilenceLowSignalReply(sessionId, text) {
+  if (isShortMeaningfulReply(text)) {
+    return { silence: false, lowSignal: false };
+  }
   const now = Date.now();
   const current = cadenceBySession.get(sessionId) || {
     lastInboundAt: 0,
@@ -108,6 +116,13 @@ function inferLeadStatus(text) {
   if (/(appointment|cita|agendar|agendo|test drive)/i.test(text || "")) return "APPT_PENDING";
   if (/(precio|carro|auto|pickup|suv|sedan|quiero|interesa)/i.test(text || "")) return "QUALIFYING";
   return "NEW";
+}
+
+function mergeLeadStatus(existingStatus, inferredStatus) {
+  const current = String(existingStatus || "").trim().toUpperCase();
+  const next = String(inferredStatus || "NEW").trim().toUpperCase();
+  if (current === "BOOKED" || current === "CLOSED_WON" || current === "CLOSED_LOST") return current;
+  return next || "NEW";
 }
 
 function isHotLead(text) {
@@ -563,6 +578,7 @@ twilioWebhookRouter.post("/whatsapp", async (req, res) => {
     const wantsHuman = requestsHuman(incomingText);
     const handoffToHuman = hotLead || wantsHuman;
     const inferredStatus = inferLeadStatus(incomingText);
+    const nextLeadStatus = mergeLeadStatus(existingLead?.status, inferredStatus);
     await upsertLeadProfile({
       sessionId,
       phone: from.replace(/^whatsapp:/, ""),
@@ -570,7 +586,7 @@ twilioWebhookRouter.post("/whatsapp", async (req, res) => {
       source: "whatsapp",
       language: detectLanguage(incomingText),
       intent: null,
-      status: inferredStatus,
+      status: nextLeadStatus,
       priority: handoffToHuman ? "HIGH" : "NORMAL",
       mode: botEnabled && !handoffToHuman ? "BOT" : "HUMAN",
       lastMessageAt: new Date().toISOString()
