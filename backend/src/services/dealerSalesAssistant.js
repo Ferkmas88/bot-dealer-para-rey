@@ -93,13 +93,13 @@ const DEALER_GENERIC_MESSAGE =
   "Aprobacion rapida, financiamiento flexible y opciones reales para que salgas manejando.";
 const VIRTUAL_ASSISTANT_LINE = "Soy el asistente virtual de Empire Rey y te puedo ayudar en todo.";
 const OPENING_PROMO_MESSAGE =
-  `${DEALER_GENERIC_MESSAGE}\n\n` +
-  `${VIRTUAL_ASSISTANT_LINE}\n\n` +
-  "Te ayudo con:\n" +
-  "• Buscar carro\n" +
-  "• Pagos semanales\n" +
-  "• Cita hoy mismo\n" +
-  "• Hablar directo con Rey (502 576 8116 / 502 780 1096)";
+  "Hola 👋\n" +
+  "Soy el asistente automático de Empire Rey Auto Sales. Estoy disponible 24/7 para ayudarte.\n\n" +
+  "Puedo ayudarte a:\n" +
+  "• Encontrar el carro que necesitas\n" +
+  "• Agendar una cita en el dealer\n" +
+  "• Conectarte directamente con Rey\n" +
+  "• Contactar a nuestro mecánico";
 const INTRO_RESET_HOURS = 24;
 
 const REY_CONTACT_REPLY = "Perfecto, te conecto con Rey para ayudarte directamente.\n+1 (502) 576-8116";
@@ -671,7 +671,7 @@ function proposeAppointmentTimes(datePreference) {
 function buildNegotiationReply(model, budget) {
   const modelText = model ? ` for ${model}` : "";
   const budgetText = budget ? ` With a budget near $${budget.toLocaleString("en-US")} I can show real available options.` : "";
-  return `I can help you with the best available units${modelText}.${budgetText} Do you prefer today at 4pm or tomorrow at 11am for a visit? `
+  return `I can help you with the best available units${modelText}.${budgetText} If you want, I can schedule an appointment for your visit.`
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -977,8 +977,8 @@ async function applyInventoryExperience(message, entities, baseReply, updatedCon
       const lines = broadByBody.map((item) => `- ${formatInventoryUnit(item)}`).join("\n");
       return {
         reply: pickOne([
-          `No tengo ${requestedBrand} disponible ahora. Pero te puedo mostrar estas opciones que si tengo hoy:\n${lines}\nTe funciona hoy 4pm o manana 11am para verlas?`,
-          `De ${requestedBrand} no tengo disponible hoy, pero mira estas opciones que estan muy bien:\n${lines}\nQuieres venir hoy 4pm o manana 11am?`
+          `No tengo ${requestedBrand} disponible ahora. Pero te puedo mostrar estas opciones que si tengo hoy:\n${lines}\nSi quieres, te agendo cita para venir a verlas.`,
+          `De ${requestedBrand} no tengo disponible hoy, pero mira estas opciones que estan muy bien:\n${lines}\nSi quieres, te agendo cita para venir a verlas.`
         ]),
         mediaUrl: null
       };
@@ -1002,14 +1002,14 @@ async function applyInventoryExperience(message, entities, baseReply, updatedCon
     const lines = exactMatches.map((item) => `- ${formatInventoryUnit(item)}`).join("\n");
     if (exactMatches.length === 1 && brand) {
       return {
-        reply: `Si, tengo 1 ${brand} disponible ahora:\n${lines}\nQuieres verlo hoy 4pm o manana 11am?`,
+        reply: `Si, tengo 1 ${brand} disponible ahora:\n${lines}\nSi quieres, te agendo cita para venir a verlo.`,
         mediaUrl: null
       };
     }
     return {
       reply: pickOne([
-        `Te comparto opciones disponibles:\n${lines}\nTe funciona hoy 4pm o manana 11am para verlas?`,
-        `Buen match, tengo estas opciones disponibles:\n${lines}\nQuieres venir hoy 4pm o manana 11am?`
+        `Te comparto opciones disponibles:\n${lines}\nSi quieres, te agendo cita para venir a verlas.`,
+        `Buen match, tengo estas opciones disponibles:\n${lines}\nSi quieres, te agendo cita para venir a verlas.`
       ]),
       mediaUrl: null
     };
@@ -1022,8 +1022,8 @@ async function applyInventoryExperience(message, entities, baseReply, updatedCon
       const lines = similar.map((item) => `- ${formatInventoryUnit(item)}`).join("\n");
       return {
         reply: pickOne([
-          `No tengo match exacto ahora, pero si alternativas similares disponibles:\n${lines}\nTe agendo visita hoy 4pm o manana 11am?`,
-          `No tengo esa exacta, pero estas se parecen mucho y estan disponibles:\n${lines}\nTe funciona hoy 4pm o manana 11am para verlas?`
+          `No tengo match exacto ahora, pero si alternativas similares disponibles:\n${lines}\nSi quieres, te agendo cita para tu visita.`,
+          `No tengo esa exacta, pero estas se parecen mucho y estan disponibles:\n${lines}\nSi quieres, te agendo cita para venir a verlas.`
         ]),
         mediaUrl: null
       };
@@ -1035,8 +1035,8 @@ async function applyInventoryExperience(message, entities, baseReply, updatedCon
       const lines = similarNoBudget.map((item) => `- ${formatInventoryUnit(item)}`).join("\n");
       return {
         reply: pickOne([
-          `No tengo match exacto en ese presupuesto, pero mira alternativas cercanas:\n${lines}\nTe agendo visita hoy 4pm o manana 11am?`,
-          `Con ese presupuesto no tengo exacto, pero estas opciones te pueden encajar:\n${lines}\nQuieres venir hoy 4pm o manana 11am?`
+          `No tengo match exacto en ese presupuesto, pero mira alternativas cercanas:\n${lines}\nSi quieres, te agendo cita para tu visita.`,
+          `Con ese presupuesto no tengo exacto, pero estas opciones te pueden encajar:\n${lines}\nSi quieres, te agendo cita para venir a verlas.`
         ]),
         mediaUrl: null
       };
@@ -1047,7 +1047,7 @@ async function applyInventoryExperience(message, entities, baseReply, updatedCon
       if (broadByBody.length) {
         const lines = broadByBody.map((item) => `- ${formatInventoryUnit(item)}`).join("\n");
         return {
-          reply: `No tengo unidades color ${requestedColor} disponibles ahora. Pero estas opciones si estan disponibles:\n${lines}\nTe funciona hoy 4pm o manana 11am para verlas?`,
+          reply: `No tengo unidades color ${requestedColor} disponibles ahora. Pero estas opciones si estan disponibles:\n${lines}\nSi quieres, te agendo cita para venir a verlas.`,
           mediaUrl: null
         };
       }
@@ -1061,7 +1061,7 @@ async function applyInventoryExperience(message, entities, baseReply, updatedCon
     if (broadAlternatives.length) {
       const lines = broadAlternatives.slice(0, 2).map((item) => `- ${formatInventoryUnit(item)}`).join("\n");
       return {
-        reply: `No tengo match exacto con esos filtros, pero estas opciones si estan disponibles ahora:\n${lines}\nTe funciona hoy 4pm o manana 11am para verlas?`,
+        reply: `No tengo match exacto con esos filtros, pero estas opciones si estan disponibles ahora:\n${lines}\nSi quieres, te agendo cita para venir a verlas.`,
         mediaUrl: null
       };
     }
@@ -1119,7 +1119,7 @@ function applyLearningReplyTuning({ intent, message, entities, baseReply, learni
 
   if (intent === "objection" && objectionCount >= 2) {
     const modelText = entities.model ? ` para ${entities.model}` : "";
-    reply = `Entiendo la preocupacion${modelText}. No negociamos precio por mensaje, pero si te sirve te muestro las mejores opciones de financiamiento en persona. ¿Hoy 4pm o mañana 11am?`;
+    reply = `Entiendo la preocupacion${modelText}. No negociamos precio por mensaje, pero si te sirve te muestro las mejores opciones de financiamiento en persona. Si quieres, te agendo cita.`;
   }
 
   if (missedNow) {
@@ -1181,12 +1181,12 @@ export async function generateDealerResponse(message, context = {}) {
   if (hasDate) {
     const slots = proposeAppointmentTimes(updatedContext.date);
     const preferred = slots[0]?.split(" ")[0] ?? updatedContext.date;
-    reply = `Podemos agendar el test drive para ${preferred}. Tengo espacios a las 4:00 PM y 5:30 PM, cual prefieres?`;
+    reply = `Podemos agendar el test drive para ${preferred}. Si quieres, te agendo cita y me dices el horario que te funciona.`;
     return { reply, updatedContext };
   }
 
   if (priceQuestion) {
-    reply = `El precio publicado de ${modelForPrice} se respeta y no negociamos por chat. Si quieres, te lo explico con opciones de financiamiento en persona. ¿Te funciona hoy 4pm o mañana 11am?`;
+    reply = `El precio publicado de ${modelForPrice} se respeta y no negociamos por chat. Si quieres, te lo explico con opciones de financiamiento en persona y te agendo cita.`;
     return { reply, updatedContext };
   }
 
@@ -1506,7 +1506,7 @@ export async function processDealerSessionMessageWithLLM(message, context = {}, 
     const alternatives = await buildAvailableAlternatives(2);
     const lines = alternatives.map((item) => `- ${formatInventoryUnit(item)}`).join("\n");
     const quickReply = alternatives.length
-      ? `No tengo auto de carrera exacto ahora, pero estas opciones estan disponibles:\n${lines}\nTe funciona hoy 4pm o manana 11am para verlas?`
+      ? `No tengo auto de carrera exacto ahora, pero estas opciones estan disponibles:\n${lines}\nSi quieres, te agendo cita para venir a verlas.`
       : "No tengo auto de carrera exacto ahora. Si quieres, te aviso en cuanto entre algo similar. Te tomo nombre y telefono?";
     const intent = "buying_interest";
     const updatedContext = {

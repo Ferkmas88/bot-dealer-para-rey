@@ -22,6 +22,13 @@ import { sendAppointmentConfirmedOwnerEmail, sendHotLeadHandoffOwnerEmail } from
 
 const DEALER_ADDRESS_TEXT = "3510 Dixie Hwy, Louisville, KY 40216";
 const MECHANIC_CONTACT_REPLY = "Sobre el mecanico: pronto estara disponible su contacto.";
+const BUSINESS_HOURS_REPLY = "Trabajamos de lunes a sabado de 11:00 AM a 8:00 PM y domingo de 11:00 AM a 4:00 PM.";
+const TRADE_IN_REPLY =
+  "Si, recibimos tu auto usado como parte de pago. Comparte ano, marca, modelo y millaje para darte un estimado rapido.";
+const DOCS_REPLY =
+  "Para avanzar normalmente pedimos ID o licencia vigente, comprobante de ingreso y direccion. Si tienes ITIN tambien te apoyamos.";
+const FINANCE_FASTPATH_REPLY =
+  "Si, te podemos ayudar con aprobacion aunque tengas credito bajo o sin historial. Tambien trabajamos con ITIN/ID. Dime tu down payment aproximado y pago semanal objetivo.";
 const NO_LLM_FALLBACK_REPLY =
   "Ahora mismo estoy teniendo alta demanda. Dime: SUV, Sedan o Pickup y tu down payment y te ayudo.";
 const COPY_EXPERIMENT = String(process.env.COPY_EXPERIMENT || "off").toLowerCase();
@@ -135,7 +142,9 @@ function mergeLeadStatus(existingStatus, inferredStatus) {
 }
 
 function isHotLead(text) {
-  return /(voy hoy|hoy mismo|direccion|llamame|call me|down|enganche|ahora|urgent|urgente)/i.test(text || "");
+  return /(voy hoy|hoy mismo|urgent|urgente|llamame|call me|hablar ahora|quiero hablar ya|necesito asesor ya)/i.test(
+    text || ""
+  );
 }
 
 function requestsHuman(text) {
@@ -152,6 +161,30 @@ function asksAddress(text) {
 
 function asksMechanic(text) {
   return /(mecanico|mec[aá]nico|mechanic|servicio mecanico|servicio mec[aá]nico|taller)/i.test(String(text || ""));
+}
+
+function asksBusinessHours(text) {
+  return /(horario|horarios|a que hora abren|a que hora cierran|abren|cierran|open|close|business hours)/i.test(
+    String(text || "")
+  );
+}
+
+function asksTradeIn(text) {
+  return /(trade[\s-]?in|parte de pago|reciben carros usados|reciben auto usado|compran carros usados|vender mi carro)/i.test(
+    String(text || "")
+  );
+}
+
+function asksBuyingDocs(text) {
+  return /(que necesito|que documentos|que papeles|documentos|papeles|licencia|pasaporte|social security|seguro para comprar)/i.test(
+    String(text || "")
+  );
+}
+
+function asksFinancingBasics(text) {
+  return /(itin|solo tengo id|sin credito|credito bajo|mal credito|financiamiento interno|aprobacion|aprueban)/i.test(
+    String(text || "")
+  );
 }
 
 function isGreetingOnly(text) {
@@ -836,6 +869,38 @@ export async function processInboundDealerMessage({
     await persistOutgoingAssistantMessage({ sessionId, assistantMessage: reply, source: "mechanic-fastpath", intent: "service_info" });
     await emitEvent({ action: "faq_mechanic", intent: "service_info", activeFlow: session?.context?.activeFlow || null });
     return { reply, mediaUrl: null, shouldReply: true, shouldNotifyInboundPush: false, kind: "mechanic-fastpath" };
+  }
+
+  if (asksTradeIn(incomingText)) {
+    const reply = applyFirstTouchToReply({ session, incomingText, reply: TRADE_IN_REPLY });
+    await persistIncomingUserMessage({ sessionId, userMessage: incomingText, source: "tradein-fastpath" });
+    await persistOutgoingAssistantMessage({ sessionId, assistantMessage: reply, source: "tradein-fastpath", intent: "trade_in" });
+    await emitEvent({ action: "faq_tradein", intent: "trade_in", activeFlow: session?.context?.activeFlow || null });
+    return { reply, mediaUrl: null, shouldReply: true, shouldNotifyInboundPush: false, kind: "tradein-fastpath" };
+  }
+
+  if (asksBusinessHours(incomingText)) {
+    const reply = applyFirstTouchToReply({ session, incomingText, reply: BUSINESS_HOURS_REPLY });
+    await persistIncomingUserMessage({ sessionId, userMessage: incomingText, source: "hours-fastpath" });
+    await persistOutgoingAssistantMessage({ sessionId, assistantMessage: reply, source: "hours-fastpath", intent: "business_hours" });
+    await emitEvent({ action: "faq_hours", intent: "business_hours", activeFlow: session?.context?.activeFlow || null });
+    return { reply, mediaUrl: null, shouldReply: true, shouldNotifyInboundPush: false, kind: "hours-fastpath" };
+  }
+
+  if (asksBuyingDocs(incomingText)) {
+    const reply = applyFirstTouchToReply({ session, incomingText, reply: DOCS_REPLY });
+    await persistIncomingUserMessage({ sessionId, userMessage: incomingText, source: "docs-fastpath" });
+    await persistOutgoingAssistantMessage({ sessionId, assistantMessage: reply, source: "docs-fastpath", intent: "docs_info" });
+    await emitEvent({ action: "faq_docs", intent: "docs_info", activeFlow: session?.context?.activeFlow || null });
+    return { reply, mediaUrl: null, shouldReply: true, shouldNotifyInboundPush: false, kind: "docs-fastpath" };
+  }
+
+  if (asksFinancingBasics(incomingText)) {
+    const reply = applyFirstTouchToReply({ session, incomingText, reply: FINANCE_FASTPATH_REPLY });
+    await persistIncomingUserMessage({ sessionId, userMessage: incomingText, source: "finance-fastpath" });
+    await persistOutgoingAssistantMessage({ sessionId, assistantMessage: reply, source: "finance-fastpath", intent: "finance_info" });
+    await emitEvent({ action: "faq_finance", intent: "finance_info", activeFlow: session?.context?.activeFlow || null });
+    return { reply, mediaUrl: null, shouldReply: true, shouldNotifyInboundPush: false, kind: "finance-fastpath" };
   }
 
   if (handoffToHuman) {

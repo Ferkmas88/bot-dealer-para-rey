@@ -29,6 +29,11 @@ export function runStartupChecks() {
     warnings.push("Meta WhatsApp env vars are incomplete (WHATSAPP_ACCESS_TOKEN / WHATSAPP_PHONE_NUMBER_ID).");
   }
 
+  const hasLlm = Boolean(process.env.OPENAI_API_KEY || process.env.CEREBRAS_API_KEY || process.env.GEMINI_API_KEY);
+  if (!hasLlm) {
+    warnings.push("No LLM provider configured (OPENAI/CEREBRAS/GEMINI). Bot will run mostly in fallback mode.");
+  }
+
   for (const warning of warnings) {
     console.warn(`[startup-check] ${warning}`);
   }
