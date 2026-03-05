@@ -9,6 +9,9 @@ export const twilioWebhookRouter = express.Router();
 const cadenceBySession = new Map();
 const inboundMessageCache = new Map();
 const INBOUND_DEDUP_TTL_MS = 10 * 60 * 1000;
+const FALLBACK_ERROR_REPLY =
+  "Tuvimos un problema temporal para responder. " +
+  "Escribe de nuevo en 1 minuto o llama a Rey al 502 576 8116.";
 
 function isLowSignalMessage(text) {
   const value = String(text || "").trim().toLowerCase();
@@ -149,6 +152,8 @@ twilioWebhookRouter.post("/whatsapp", async (req, res) => {
     return res.type("text/xml").send(twiml.toString());
   } catch (error) {
     console.error("Twilio webhook error:", error);
-    return res.status(500).send("Server error");
+    const twiml = new twilio.twiml.MessagingResponse();
+    twiml.message().body(FALLBACK_ERROR_REPLY);
+    return res.type("text/xml").send(twiml.toString());
   }
 });
