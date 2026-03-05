@@ -312,6 +312,42 @@ function asksForTradeIn(text) {
   );
 }
 
+function asksForCheapCar(text) {
+  return /(carro barato|auto barato|coche barato|carro economico|carro económico|auto economico|auto económico|opciones baratas|algo barato|mas barato|m[aá]s barato|barato)\b/i.test(
+    text || ""
+  );
+}
+
+function buildCheapCarFastpath(context, extracted) {
+  const intent = "buying_interest";
+  const reply =
+    "Soy el bot asistente de Empire Rey y si, te ayudo a encontrar un carro barato.\n" +
+    "Podemos ayudarte con:\n" +
+    "- Opciones economicas disponibles en inventario\n" +
+    "- Pagos semanales segun unidad y perfil\n" +
+    "- Aprobacion con ITIN, ID o credito bajo\n" +
+    "- Agendar cita para que salgas manejando hoy\n\n" +
+    "Que buscas: sedan, SUV o pickup? Y cuanto puedes dar de down payment?";
+
+  const updatedContext = mergeContext(context, extracted, intent);
+  const entities = buildEntitySnapshot(extracted, updatedContext);
+  const skill = { stage: "cheap_car", nextObjective: "Calificar tipo de unidad y pago inicial", confidence: 0.99 };
+
+  return {
+    reply,
+    intent,
+    entities,
+    suggestions: [
+      "Preguntar tipo de carro y presupuesto semanal.",
+      "Ofrecer cita hoy o manana para ver opciones economicas."
+    ],
+    skill,
+    source: "cheap-car-fastpath",
+    mediaUrl: null,
+    updatedContext
+  };
+}
+
 function buildBusinessFaqFastpath(message, context, extracted) {
   const safeMessage = String(message || "");
   const intent = "question";
@@ -1138,6 +1174,10 @@ export async function processDealerSessionMessage(message, context = {}, learnin
   const businessFaqFastpath = buildBusinessFaqFastpath(safeMessage, context, extracted);
   if (businessFaqFastpath) return businessFaqFastpath;
 
+  if (asksForCheapCar(safeMessage)) {
+    return buildCheapCarFastpath(context, extracted);
+  }
+
   if (asksForMechanicContact(safeMessage)) {
     const intent = "question";
     const updatedContext = mergeContext(context, extracted, intent);
@@ -1235,6 +1275,10 @@ export async function processDealerSessionMessageWithLLM(message, context = {}, 
 
   const businessFaqFastpath = buildBusinessFaqFastpath(safeMessage, context, extracted);
   if (businessFaqFastpath) return businessFaqFastpath;
+
+  if (asksForCheapCar(safeMessage)) {
+    return buildCheapCarFastpath(context, extracted);
+  }
 
   if (asksForMechanicContact(safeMessage)) {
     const intent = "question";
