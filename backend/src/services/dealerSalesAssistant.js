@@ -90,12 +90,14 @@ const DAY_INDEX_TO_SPANISH = ["domingo", "lunes", "martes", "miercoles", "jueves
 
 const OPENING_PROMO_MESSAGE =
   "Hola 👋\n" +
-  "Soy el asistente automático de Empire Rey Auto Sales. Estoy disponible 24/7 para ayudarte.\n\n" +
+  "Soy el asistente virtual de Empire Rey Auto Sales. Estoy disponible 24/7 para ayudarte.\n\n" +
   "Puedo ayudarte a:\n" +
   "• Encontrar el carro que necesitas\n" +
   "• Agendar una cita en el dealer\n" +
   "• Conectarte directamente con Rey\n" +
   "• Contactar a nuestro mecánico";
+
+const FIRST_TOUCH_INTRO = "Hola 👋\nSoy el asistente virtual de Empire Rey Auto Sales.";
 
 const REY_CONTACT_REPLY = "Perfecto, te conecto con Rey para ayudarte directamente.\n+1 (502) 576-8116";
 const MECHANIC_CONTACT_REPLY = "Si, tambien ofrecemos servicio mecanico. Que reparacion o servicio necesitas?";
@@ -189,6 +191,36 @@ function hasAppointmentSignal(text) {
 function isGreetingOnly(text) {
   const normalized = (text || "").trim().toLowerCase();
   return /^(hola+|hello+|hi+|buenas|buenos dias|buenas tardes|buenas noches)$/.test(normalized);
+}
+
+function isGenericGreetingMessage(text) {
+  return /^(hola+(\s+\w+)?|hello+|hi+|hey+|holi+|ola+|buenas|buen dia|buenos dias|buenas tardes|buenas noches|saludos|que tal|good morning|good evening)\s*$/i.test(
+    String(text || "").trim()
+  );
+}
+
+export function applyFirstTouchPolicy({ message, context = {}, aiResult }) {
+  if (!aiResult || typeof aiResult !== "object") return aiResult;
+
+  const introSent = Boolean(context?.assistantIntroSent);
+  const baseUpdatedContext = aiResult.updatedContext && typeof aiResult.updatedContext === "object" ? aiResult.updatedContext : {};
+
+  if (introSent) {
+    aiResult.updatedContext = { ...baseUpdatedContext, assistantIntroSent: true };
+    return aiResult;
+  }
+
+  if (isGenericGreetingMessage(message)) {
+    aiResult.reply = OPENING_PROMO_MESSAGE;
+  } else {
+    const alreadyIntroduced = /(asistente\s+(virtual|autom[aá]tico))/i.test(String(aiResult.reply || ""));
+    if (!alreadyIntroduced) {
+      aiResult.reply = `${FIRST_TOUCH_INTRO}\n\n${aiResult.reply}`;
+    }
+  }
+
+  aiResult.updatedContext = { ...baseUpdatedContext, assistantIntroSent: true };
+  return aiResult;
 }
 
 function containsSexualOrAbusive(text) {

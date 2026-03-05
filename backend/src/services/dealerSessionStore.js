@@ -10,7 +10,8 @@ function createEmptySession(sessionId) {
       budget: null,
       date: null,
       contact: { email: null, phone: null },
-      lastIntent: null
+      lastIntent: null,
+      assistantIntroSent: false
     },
     extractedData: {
       model: null,

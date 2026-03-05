@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { processDealerSessionMessage, processDealerSessionMessageWithLLM } from "../services/dealerSalesAssistant.js";
+import { applyFirstTouchPolicy, processDealerSessionMessage, processDealerSessionMessageWithLLM } from "../services/dealerSalesAssistant.js";
 import { checkLlmConnection } from "../services/openaiClient.js";
 import {
   getDealerSession,
@@ -47,6 +47,8 @@ dealerAiRouter.post("/dealer/ai", async (req, res) => {
   const aiResult = isInventoryOrBrandRequest(message)
     ? await processDealerSessionMessage(message, session.context, learningState)
     : await processDealerSessionMessageWithLLM(message, session.context, learningState);
+
+  applyFirstTouchPolicy({ message, context: session.context, aiResult });
 
   await saveDealerTurn({
     sessionId,

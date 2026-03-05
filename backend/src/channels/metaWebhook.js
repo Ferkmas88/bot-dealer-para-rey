@@ -1,5 +1,5 @@
 ﻿import express from "express";
-import { processDealerSessionMessageWithLLM } from "../services/dealerSalesAssistant.js";
+import { applyFirstTouchPolicy, processDealerSessionMessageWithLLM } from "../services/dealerSalesAssistant.js";
 import { getDealerSession, getLearningState, saveDealerTurn } from "../services/dealerSessionStore.js";
 import {
   createAppointment,
@@ -745,9 +745,7 @@ metaWebhookRouter.post("/whatsapp", async (req, res) => {
       const learningState = getLearningState(sessionId);
 
       const aiResult = await processDealerSessionMessageWithLLM(msg.body, session.context, learningState);
-      if (!existingLead) {
-        aiResult.reply = `${FIRST_CONTACT_MESSAGE}\n\n${aiResult.reply}`;
-      }
+      applyFirstTouchPolicy({ message: msg.body, context: session.context, aiResult });
 
       await saveDealerTurn({
         sessionId,

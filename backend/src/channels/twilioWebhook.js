@@ -1,6 +1,6 @@
 ﻿import express from "express";
 import twilio from "twilio";
-import { processDealerSessionMessageWithLLM } from "../services/dealerSalesAssistant.js";
+import { applyFirstTouchPolicy, processDealerSessionMessageWithLLM } from "../services/dealerSalesAssistant.js";
 import { getDealerSession, getLearningState, saveDealerTurn } from "../services/dealerSessionStore.js";
 import {
   createAppointment,
@@ -748,9 +748,7 @@ twilioWebhookRouter.post("/whatsapp", async (req, res) => {
       learningState
     );
 
-    if (!existingLead) {
-      aiResult.reply = `${FIRST_CONTACT_MESSAGE}\n\n${aiResult.reply}`;
-    }
+    applyFirstTouchPolicy({ message: incomingText, context: session.context, aiResult });
 
     await saveDealerTurn({
       sessionId,
