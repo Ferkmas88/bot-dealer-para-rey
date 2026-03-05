@@ -108,6 +108,14 @@ function buildNoLlmFallbackReply(copyVariant) {
   );
 }
 
+function buildRepeatGreetingReply(copyVariant) {
+  return byVariant(
+    copyVariant,
+    "Perfecto. Seguimos. Buscas Sedan, SUV o Pickup?",
+    "Perfecto ✅ Seguimos. Dime si buscas Sedan, SUV o Pickup y te ayudo a cerrar cita."
+  );
+}
+
 function detectLanguage(text) {
   if (/[¿¡]|(hola|cita|carro|quiero|manana|direccion)/i.test(text || "")) return "es";
   return "en";
@@ -146,6 +154,11 @@ function asksMechanic(text) {
   return /(mecanico|mec[aá]nico|mechanic|servicio mecanico|servicio mec[aá]nico|taller)/i.test(String(text || ""));
 }
 
+function isGreetingOnly(text) {
+  return /^(hola+(\s+\w+)?|hello+|hi+|hey+|holi+|ola+|buenas|buen dia|buenos dias|buenas tardes|buenas noches|saludos|que tal|hola bot|good morning|good evening)\s*$/i.test(
+    String(text || "").trim()
+  );
+}
 function buildNextAppointmentOptions() {
   const now = new Date();
   const option1 = new Date(now.getTime() + 24 * 60 * 60 * 1000);
@@ -643,6 +656,7 @@ export async function processInboundDealerMessage({
   }
 
   const session = getDealerSession(sessionId);
+  let introRecentlySent = Boolean(session?.context?.assistantIntroSent);
   if (!session?.context?.assistantIntroSent) {
     const latestIntroAt = await getLatestAssistantIntroAt(sessionId);
     if (latestIntroAt) {
@@ -650,6 +664,7 @@ export async function processInboundDealerMessage({
       if (Number.isFinite(introTs) && Date.now() - introTs < 24 * 60 * 60 * 1000) {
         session.context.assistantIntroSent = true;
         session.context.assistantIntroSentAt = new Date(introTs).toISOString();
+        introRecentlySent = true;
       }
     }
   }
@@ -683,6 +698,19 @@ export async function processInboundDealerMessage({
     mode: botEnabled && !handoffToHuman ? "BOT" : "HUMAN",
     lastMessageAt: new Date().toISOString()
   });
+
+  if (!isActiveAppointmentFlow && isGreetingOnly(incomingText) && introRecentlySent) {
+    const reply = applyFirstTouchToReply({ session, incomingText, reply: buildRepeatGreetingReply(copyVariant) });
+    await persistIncomingUserMessage({ sessionId, userMessage: incomingText, source: "greeting-repeat" });
+    await persistOutgoingAssistantMessage({
+      sessionId,
+      assistantMessage: reply,
+      source: "greeting-repeat",
+      intent: "welcome"
+    });
+    await emitEvent({ action: "greeting_repeat", intent: "welcome", activeFlow: null });
+    return { reply, mediaUrl: null, shouldReply: true, shouldNotifyInboundPush: false, kind: "greeting-repeat" };
+  }
 
   if (isActiveAppointmentFlow) {
     if (detectedPhone) {
@@ -962,3 +990,4 @@ export async function processInboundDealerMessage({
     kind: "ai"
   };
 }
+
