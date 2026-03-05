@@ -44,8 +44,6 @@ const EMPTY_FORM = {
   price: "",
   mileage: "",
   vehicle_type: "Sedan",
-  transmission: "",
-  fuel_type: "",
   color: "",
   status: "available"
 };
@@ -1442,8 +1440,6 @@ export default function App() {
       price: String(row.price || ""),
       mileage: String(row.mileage || ""),
       vehicle_type: row.vehicle_type || "Sedan",
-      transmission: row.transmission || "",
-      fuel_type: row.fuel_type || "",
       color: row.color || "",
       status: row.status || "available"
     });
@@ -1462,7 +1458,7 @@ export default function App() {
       featured: 0
     };
 
-    const method = editingId ? "PUT" : "POST";
+    const method = editingId ? "PATCH" : "POST";
     const url = editingId ? `${DB_API_URL}/${editingId}` : DB_API_URL;
 
     try {
@@ -1654,8 +1650,6 @@ export default function App() {
                     <option value="SUV">SUV</option>
                     <option value="Pickup">Pickup</option>
                   </select>
-                  <input placeholder="Transmision" value={inventoryForm.transmission} onChange={(e) => setInventoryForm((prev) => ({ ...prev, transmission: e.target.value }))} required />
-                  <input placeholder="Combustible" value={inventoryForm.fuel_type} onChange={(e) => setInventoryForm((prev) => ({ ...prev, fuel_type: e.target.value }))} required />
                   <input placeholder="Color" value={inventoryForm.color} onChange={(e) => setInventoryForm((prev) => ({ ...prev, color: e.target.value }))} required />
                   <select value={inventoryForm.status} onChange={(e) => setInventoryForm((prev) => ({ ...prev, status: e.target.value }))}>
                     <option value="available">Disponible</option>
@@ -1673,10 +1667,18 @@ export default function App() {
                     <thead>
                       <tr>
                         <th>ID</th>
-                        <th>Auto</th>
+                        <th>Ano</th>
+                        <th>Marca</th>
+                        <th>Modelo</th>
+                        <th>Tipo</th>
                         <th>Precio</th>
                         <th>Millaje</th>
+                        <th>Color</th>
+                        <th>Transmision</th>
+                        <th>Combustible</th>
                         <th>Status</th>
+                        <th>Destacado</th>
+                        <th>Actualizado</th>
                         <th>Acciones</th>
                       </tr>
                     </thead>
@@ -1684,12 +1686,18 @@ export default function App() {
                       {inventoryRows.map((row) => (
                         <tr key={row.id}>
                           <td>{row.id}</td>
-                          <td>
-                            {row.year} {row.make} {row.model} ({row.vehicle_type || "Sedan"})
-                          </td>
+                          <td>{row.year || "-"}</td>
+                          <td>{row.make || "-"}</td>
+                          <td>{row.model || "-"}</td>
+                          <td>{row.vehicle_type || "Sedan"}</td>
                           <td>${Number(row.price || 0).toLocaleString("en-US")}</td>
                           <td>{Number(row.mileage || 0).toLocaleString("en-US")} mi</td>
+                          <td>{row.color || "-"}</td>
+                          <td>{row.transmission || "-"}</td>
+                          <td>{row.fuel_type || "-"}</td>
                           <td>{row.status}</td>
+                          <td>{Number(row.featured) ? "Si" : "No"}</td>
+                          <td>{formatTimestamp(row.updated_at)}</td>
                           <td className="row-actions">
                             <button type="button" className="secondary-btn" onClick={() => fillFormFromRow(row)}>
                               Editar
