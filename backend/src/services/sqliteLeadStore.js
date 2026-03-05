@@ -2395,7 +2395,7 @@ export async function listInventory({ status = null } = {}) {
           SELECT id, make, model, year, price, mileage, transmission, fuel_type, vehicle_type, color, status, featured, created_at, updated_at
           FROM inventory
           WHERE LOWER(status) = LOWER($1)
-          ORDER BY updated_at DESC, id DESC
+          ORDER BY id ASC
         `,
         [status]
       );
@@ -2404,7 +2404,7 @@ export async function listInventory({ status = null } = {}) {
     const result = await pgPool.query(`
       SELECT id, make, model, year, price, mileage, transmission, fuel_type, vehicle_type, color, status, featured, created_at, updated_at
       FROM inventory
-      ORDER BY updated_at DESC, id DESC
+      ORDER BY id ASC
     `);
     return result.rows || [];
   }
@@ -2414,12 +2414,12 @@ export async function listInventory({ status = null } = {}) {
       SELECT id, make, model, year, price, mileage, transmission, fuel_type, vehicle_type, color, status, featured, created_at, updated_at
       FROM inventory
       WHERE LOWER(status) = LOWER(?)
-      ORDER BY updated_at DESC, id DESC
+      ORDER BY id ASC
     `
     : `
       SELECT id, make, model, year, price, mileage, transmission, fuel_type, vehicle_type, color, status, featured, created_at, updated_at
       FROM inventory
-      ORDER BY updated_at DESC, id DESC
+      ORDER BY id ASC
     `;
 
   return hasStatus ? db.prepare(sql).all(status) : db.prepare(sql).all();
