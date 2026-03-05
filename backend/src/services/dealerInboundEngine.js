@@ -18,11 +18,23 @@ import {
   updateAppointment,
   updateLeadStatus
 } from "./sqliteLeadStore.js";
-import { sendAppointmentConfirmedOwnerEmail, sendHotLeadHandoffOwnerEmail } from "./ownerNotifications.js";
+import {
+  sendAppointmentConfirmedOwnerEmail,
+  sendAppointmentCreatedOwnerEmail,
+  sendHotLeadHandoffOwnerEmail
+} from "./ownerNotifications.js";
 
 const DEALER_ADDRESS_TEXT = "3510 Dixie Hwy, Louisville, KY 40216";
 const MECHANIC_CONTACT_REPLY =
-  "Si, contamos con servicio mecanico. Llamanos al (502) 576-8116 o (502) 780-1096 y te apoyamos con revision.";
+  "Si, contamos con servicio mecanico. Te ayudo a comunicarte con el mecanico ahora mismo.";
+const MENU_ENTRY_REPLY =
+  "Hola 👋 Soy el asistente de Empire Rey Auto Sales.\n\n" +
+  "¿En que te ayudo hoy?\n\n" +
+  "1️⃣ Buscar un carro\n" +
+  "2️⃣ Agendar una cita\n" +
+  "3️⃣ Comunicarte con Rey\n" +
+  "4️⃣ Comunicarte con el mecanico\n\n" +
+  "Escribe el numero o dime que necesitas.";
 const BUSINESS_HOURS_REPLY =
   "Trabajamos de lunes a sabado de 11:00 AM a 8:00 PM y domingo de 11:00 AM a 4:00 PM. Si quieres, te agendo cita para visitarnos.";
 const TRADE_IN_REPLY =
@@ -314,6 +326,45 @@ function isTwoChoice(text) {
   return /^\s*2\s*$/.test(text) || /^(opcion|option)\s*2\b/i.test(text);
 }
 
+function isThreeChoice(text) {
+  return /^\s*3\s*$/.test(text) || /^(opcion|option)\s*3\b/i.test(text);
+}
+
+function isFourChoice(text) {
+  return /^\s*4\s*$/.test(text) || /^(opcion|option)\s*4\b/i.test(text);
+}
+
+function asksReyDirect(text) {
+  return /(hablar con rey|comunicar.*rey|conectar.*rey|dueno|dueño|owner|rey)/i.test(String(text || ""));
+}
+
+function isMenuTrigger(text) {
+  return /^(menu|men[uú]|ayuda|help|opciones|options)$/i.test(String(text || "").trim());
+}
+
+function normalizeVehicleTypeChoice(text) {
+  const raw = String(text || "").trim().toLowerCase();
+  if (!raw) return null;
+  if (raw === "1" || /\bsedan\b/.test(raw)) return "Sedan";
+  if (raw === "2" || /\bsuv\b|camioneta/.test(raw)) return "SUV";
+  if (raw === "3" || /pickup|pick[\s-]*up|truck/.test(raw)) return "Pickup";
+  return null;
+}
+
+function setSimpleAppointmentFlow(session, stage, patch = {}) {
+  const prev = session?.context?.appointmentFlow && typeof session.context.appointmentFlow === "object" ? session.context.appointmentFlow : {};
+  session.context = {
+    ...(session.context || {}),
+    activeFlow: "appointment",
+    appointmentFlow: {
+      ...prev,
+      ...patch,
+      stage,
+      updatedAt: new Date().toISOString()
+    }
+  };
+}
+
 function isConfirmAction(text) {
   return /^(confirmar|confirm|confirmo|confirmed|si confirmo|ok confirmo)\b/i.test(text);
 }
@@ -389,6 +440,14 @@ function clearAppointmentFlow(session) {
     ...(session.context || {}),
     activeFlow: null,
     appointmentFlow: null
+  };
+}
+
+function markMenuIntroSent(session) {
+  session.context = {
+    ...(session.context || {}),
+    assistantIntroSent: true,
+    assistantIntroSentAt: new Date().toISOString()
   };
 }
 
@@ -742,6 +801,240 @@ export async function processInboundDealerMessage({
     lastMessageAt: new Date().toISOString()
   });
 
+  const isMenuRequested = isMenuTrigger(incomingText);
+  const isOption1 = isOneChoice(incomingText);
+  const isOption2 = isTwoChoice(incomingText);
+  const isOption3 = isThreeChoice(incomingText);
+  const isOption4 = isFourChoice(incomingText);
+  const isSimpleAppointmentStage =
+    isActiveAppointmentFlow &&
+    ["simple_need_name", "simple_need_datetime", "simple_need_vehicle_type"].includes(String(appointmentStage || ""));
+
+  if (!isActiveAppointmentFlow && (isGreetingOnly(incomingText) || isMenuRequested)) {
+    markMenuIntroSent(session);
+    await persistIncomingUserMessage({ sessionId, userMessage: incomingText, source: "menu-entry" });
+    await persistOutgoingAssistantMessage({
+      sessionId,
+      assistantMessage: MENU_ENTRY_REPLY,
+      source: "menu-entry",
+      intent: "welcome"
+    });
+    await emitEvent({ action: "menu_entry", intent: "welcome", activeFlow: null });
+    return { reply: MENU_ENTRY_REPLY, mediaUrl: null, shouldReply: true, shouldNotifyInboundPush: false, kind: "menu-entry" };
+  }
+
+  if (
+    !isActiveAppointmentFlow &&
+    (isOption1 || /(buscar.*carro|ver.*carro|que carros|que autos|inventario|disponibles|mostrar.*carros)/i.test(incomingText))
+  ) {
+    const reply = applyFirstTouchToReply({
+      session,
+      incomingText,
+      reply: "Perfecto. Que tipo de carro buscas? Sedan, SUV o Pickup?"
+    });
+    await persistIncomingUserMessage({ sessionId, userMessage: incomingText, source: "menu-option-1" });
+    await persistOutgoingAssistantMessage({
+      sessionId,
+      assistantMessage: reply,
+      source: "menu-option-1",
+      intent: "buying_interest"
+    });
+    await emitEvent({ action: "menu_option_1", intent: "buying_interest", activeFlow: session?.context?.activeFlow || null });
+    return { reply, mediaUrl: null, shouldReply: true, shouldNotifyInboundPush: false, kind: "menu-option-1" };
+  }
+
+  if (
+    !isActiveAppointmentFlow &&
+    (isOption2 || /agendar|agendo|quiero cita|crear cita|programar cita|appointment|test drive|prueba de manejo/i.test(incomingText))
+  ) {
+    setSimpleAppointmentFlow(session, "simple_need_name");
+    const reply = applyFirstTouchToReply({
+      session,
+      incomingText,
+      reply: "Perfecto. Para agendar tu cita, cual es tu nombre?"
+    });
+    await persistIncomingUserMessage({ sessionId, userMessage: incomingText, source: "menu-option-2" });
+    await persistOutgoingAssistantMessage({
+      sessionId,
+      assistantMessage: reply,
+      source: "menu-option-2",
+      intent: "appointment_flow"
+    });
+    await emitEvent({ action: "menu_option_2", intent: "appointment_flow", activeFlow: "appointment", missingFields: ["name"] });
+    return { reply, mediaUrl: null, shouldReply: true, shouldNotifyInboundPush: false, kind: "menu-option-2" };
+  }
+
+  if (!isActiveAppointmentFlow && (isOption3 || asksReyDirect(incomingText))) {
+    const reply = applyFirstTouchToReply({
+      session,
+      incomingText,
+      reply: "Claro. Te ayudo a comunicarte con Rey ahora mismo."
+    });
+    await persistIncomingUserMessage({ sessionId, userMessage: incomingText, source: "menu-option-3" });
+    await persistOutgoingAssistantMessage({
+      sessionId,
+      assistantMessage: reply,
+      source: "menu-option-3",
+      intent: "handoff"
+    });
+    await emitEvent({ action: "menu_option_3", intent: "handoff", activeFlow: session?.context?.activeFlow || null });
+    return { reply, mediaUrl: null, shouldReply: true, shouldNotifyInboundPush: true, kind: "menu-option-3" };
+  }
+
+  if (!isActiveAppointmentFlow && (isOption4 || asksMechanic(incomingText))) {
+    const reply = applyFirstTouchToReply({
+      session,
+      incomingText,
+      reply: "Claro. Te ayudo a comunicarte con el mecanico."
+    });
+    await persistIncomingUserMessage({ sessionId, userMessage: incomingText, source: "menu-option-4" });
+    await persistOutgoingAssistantMessage({
+      sessionId,
+      assistantMessage: reply,
+      source: "menu-option-4",
+      intent: "service_info"
+    });
+    await emitEvent({ action: "menu_option_4", intent: "service_info", activeFlow: session?.context?.activeFlow || null });
+    return { reply, mediaUrl: null, shouldReply: true, shouldNotifyInboundPush: true, kind: "menu-option-4" };
+  }
+
+  if (isSimpleAppointmentStage) {
+    if (appointmentStage === "simple_need_name") {
+      if (!detectedName) {
+        const reply = applyFirstTouchToReply({
+          session,
+          incomingText,
+          reply: "Para continuar con la cita, comparteme tu nombre por favor."
+        });
+        await persistIncomingUserMessage({ sessionId, userMessage: incomingText, source: "appointment-simple" });
+        await persistOutgoingAssistantMessage({ sessionId, assistantMessage: reply, source: "appointment-simple", intent: "appointment_flow" });
+        await emitEvent({ action: "appointment_simple", intent: "appointment_flow", activeFlow: "appointment", missingFields: ["name"] });
+        return { reply, mediaUrl: null, shouldReply: true, shouldNotifyInboundPush: false, kind: "appointment-simple" };
+      }
+
+      await upsertLeadProfile({ sessionId, name: detectedName, lastMessageAt: new Date().toISOString() });
+      setSimpleAppointmentFlow(session, "simple_need_datetime");
+      const reply = applyFirstTouchToReply({
+        session,
+        incomingText,
+        reply: `Perfecto, ${detectedName}. Que dia y hora te gustaria venir? (ejemplo: manana 11am)`
+      });
+      await persistIncomingUserMessage({ sessionId, userMessage: incomingText, source: "appointment-simple" });
+      await persistOutgoingAssistantMessage({ sessionId, assistantMessage: reply, source: "appointment-simple", intent: "appointment_flow" });
+      await emitEvent({ action: "appointment_simple", intent: "appointment_flow", activeFlow: "appointment", missingFields: ["time"] });
+      return { reply, mediaUrl: null, shouldReply: true, shouldNotifyInboundPush: false, kind: "appointment-simple" };
+    }
+
+    if (appointmentStage === "simple_need_datetime") {
+      if (!detectedDateTime) {
+        const reply = applyFirstTouchToReply({
+          session,
+          incomingText,
+          reply: "Necesito dia y hora para agendar. Ejemplo: hoy 4pm o manana 11am."
+        });
+        await persistIncomingUserMessage({ sessionId, userMessage: incomingText, source: "appointment-simple" });
+        await persistOutgoingAssistantMessage({ sessionId, assistantMessage: reply, source: "appointment-simple", intent: "appointment_flow" });
+        await emitEvent({ action: "appointment_simple", intent: "appointment_flow", activeFlow: "appointment", missingFields: ["time"] });
+        return { reply, mediaUrl: null, shouldReply: true, shouldNotifyInboundPush: false, kind: "appointment-simple" };
+      }
+
+      setSimpleAppointmentFlow(session, "simple_need_vehicle_type", { requestedAt: detectedDateTime });
+      await upsertLeadProfile({
+        sessionId,
+        datePref: detectedDateTime,
+        status: "APPT_PENDING",
+        lastMessageAt: new Date().toISOString()
+      });
+      const reply = applyFirstTouchToReply({
+        session,
+        incomingText,
+        reply: "Perfecto. Que tipo de carro buscas? 1) Sedan 2) SUV 3) Pickup"
+      });
+      await persistIncomingUserMessage({ sessionId, userMessage: incomingText, source: "appointment-simple" });
+      await persistOutgoingAssistantMessage({ sessionId, assistantMessage: reply, source: "appointment-simple", intent: "appointment_flow" });
+      await emitEvent({ action: "appointment_simple", intent: "appointment_flow", activeFlow: "appointment", missingFields: ["vehicle_type"] });
+      return { reply, mediaUrl: null, shouldReply: true, shouldNotifyInboundPush: false, kind: "appointment-simple" };
+    }
+
+    if (appointmentStage === "simple_need_vehicle_type") {
+      const vehicleType = normalizeVehicleTypeChoice(incomingText);
+      if (!vehicleType) {
+        const reply = applyFirstTouchToReply({
+          session,
+          incomingText,
+          reply: "Responde con 1, 2 o 3: 1) Sedan 2) SUV 3) Pickup."
+        });
+        await persistIncomingUserMessage({ sessionId, userMessage: incomingText, source: "appointment-simple" });
+        await persistOutgoingAssistantMessage({ sessionId, assistantMessage: reply, source: "appointment-simple", intent: "appointment_flow" });
+        await emitEvent({ action: "appointment_simple", intent: "appointment_flow", activeFlow: "appointment", missingFields: ["vehicle_type"] });
+        return { reply, mediaUrl: null, shouldReply: true, shouldNotifyInboundPush: false, kind: "appointment-simple" };
+      }
+
+      const requestedAt = session?.context?.appointmentFlow?.requestedAt || null;
+      if (!requestedAt) {
+        setSimpleAppointmentFlow(session, "simple_need_datetime");
+        const reply = applyFirstTouchToReply({
+          session,
+          incomingText,
+          reply: "Se perdio el horario. Dime de nuevo dia y hora (ejemplo: manana 11am)."
+        });
+        await persistIncomingUserMessage({ sessionId, userMessage: incomingText, source: "appointment-simple" });
+        await persistOutgoingAssistantMessage({ sessionId, assistantMessage: reply, source: "appointment-simple", intent: "appointment_flow" });
+        await emitEvent({ action: "appointment_simple", intent: "appointment_flow", activeFlow: "appointment", missingFields: ["time"] });
+        return { reply, mediaUrl: null, shouldReply: true, shouldNotifyInboundPush: false, kind: "appointment-simple" };
+      }
+
+      const openAppt = await getLatestOpenAppointmentForLead(sessionId);
+      let appointmentRow = null;
+      if (openAppt) {
+        appointmentRow = await updateAppointment(openAppt.id, {
+          scheduled_at: requestedAt,
+          status: "PENDING",
+          confirmation_state: "PROPOSED",
+          notes: `Tipo buscado: ${vehicleType}`
+        });
+      } else {
+        appointmentRow = await createAppointment({
+          lead_session_id: sessionId,
+          scheduled_at: requestedAt,
+          status: "PENDING",
+          confirmation_state: "PROPOSED",
+          notes: `Creada por flujo simple. Tipo buscado: ${vehicleType}`
+        });
+      }
+
+      const leadRow = await upsertLeadProfile({
+        sessionId,
+        status: "APPT_PENDING",
+        intent: "appointment_flow",
+        datePref: requestedAt,
+        lastMessageAt: new Date().toISOString()
+      });
+      await updateLeadStatus(sessionId, "APPT_PENDING");
+      if (!openAppt && appointmentRow) {
+        const emailResult = await sendAppointmentCreatedOwnerEmail({
+          to: process.env.OWNER_NOTIFICATION_EMAIL || "ferkmas88@gmail.com",
+          appointment: appointmentRow,
+          lead: leadRow
+        });
+        if (!emailResult?.ok) {
+          console.error("Simple appointment created email failed:", emailResult?.reason || "unknown");
+        }
+      }
+
+      clearAppointmentFlow(session);
+      const reply = applyFirstTouchToReply({
+        session,
+        incomingText,
+        reply: `Listo. Ya agende tu cita para ${formatOptionLine(requestedAt)}.\nTipo de carro: ${vehicleType}.\nSi quieres, tambien te puedo comunicar con Rey.`
+      });
+      await persistIncomingUserMessage({ sessionId, userMessage: incomingText, source: "appointment-simple" });
+      await persistOutgoingAssistantMessage({ sessionId, assistantMessage: reply, source: "appointment-simple", intent: "appointment_flow" });
+      await emitEvent({ action: "appointment_simple_created", intent: "appointment_flow", activeFlow: null });
+      return { reply, mediaUrl: null, shouldReply: true, shouldNotifyInboundPush: false, kind: "appointment-simple" };
+    }
+  }
+
   if (!isActiveAppointmentFlow && isGreetingOnly(incomingText) && introRecentlySent) {
     const reply = applyFirstTouchToReply({ session, incomingText, reply: buildRepeatGreetingReply(copyVariant) });
     await persistIncomingUserMessage({ sessionId, userMessage: incomingText, source: "greeting-repeat" });
@@ -942,7 +1235,7 @@ export async function processInboundDealerMessage({
     );
 
     const rawReply = wantsHuman
-      ? "Claro. Si quieres hablar con alguien del equipo, contacta directo a Rey:\n+1 (502) 576-8116\nEmpire Rey"
+      ? "Claro. Te ayudo a comunicarte con Rey ahora mismo."
       : "Veo interes urgente. Te conecto con un asesor humano ahora mismo para atenderte mas rapido.";
     const reply = applyFirstTouchToReply({ session, incomingText, reply: rawReply });
 
