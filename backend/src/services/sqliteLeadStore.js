@@ -296,6 +296,30 @@ async function ensurePgInventorySchemaAndSeed() {
     );
   `);
 
+  // Always run schema evolution, even when table already has rows.
+  await pgPool.query("ALTER TABLE inventory ADD COLUMN IF NOT EXISTS make TEXT");
+  await pgPool.query("ALTER TABLE inventory ADD COLUMN IF NOT EXISTS model TEXT");
+  await pgPool.query("ALTER TABLE inventory ADD COLUMN IF NOT EXISTS year INTEGER");
+  await pgPool.query("ALTER TABLE inventory ADD COLUMN IF NOT EXISTS price DOUBLE PRECISION");
+  await pgPool.query("ALTER TABLE inventory ADD COLUMN IF NOT EXISTS mileage INTEGER");
+  await pgPool.query("ALTER TABLE inventory ADD COLUMN IF NOT EXISTS transmission TEXT");
+  await pgPool.query("ALTER TABLE inventory ADD COLUMN IF NOT EXISTS fuel_type TEXT");
+  await pgPool.query("ALTER TABLE inventory ADD COLUMN IF NOT EXISTS vehicle_type TEXT NOT NULL DEFAULT 'Sedan'");
+  await pgPool.query("ALTER TABLE inventory ADD COLUMN IF NOT EXISTS color TEXT");
+  await pgPool.query("ALTER TABLE inventory ADD COLUMN IF NOT EXISTS status TEXT");
+  await pgPool.query("ALTER TABLE inventory ADD COLUMN IF NOT EXISTS featured INTEGER NOT NULL DEFAULT 0");
+  await pgPool.query("ALTER TABLE inventory ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()");
+  await pgPool.query("ALTER TABLE inventory ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()");
+
+  await pgPool.query("UPDATE inventory SET vehicle_type = 'Sedan' WHERE vehicle_type IS NULL OR TRIM(vehicle_type) = ''");
+  await pgPool.query("UPDATE inventory SET transmission = 'N/A' WHERE transmission IS NULL OR TRIM(transmission) = ''");
+  await pgPool.query("UPDATE inventory SET fuel_type = 'N/A' WHERE fuel_type IS NULL OR TRIM(fuel_type) = ''");
+  await pgPool.query("UPDATE inventory SET color = 'N/A' WHERE color IS NULL OR TRIM(color) = ''");
+  await pgPool.query("UPDATE inventory SET status = 'available' WHERE status IS NULL OR TRIM(status) = ''");
+  await pgPool.query("UPDATE inventory SET featured = 0 WHERE featured IS NULL");
+  await pgPool.query("UPDATE inventory SET created_at = NOW() WHERE created_at IS NULL");
+  await pgPool.query("UPDATE inventory SET updated_at = NOW() WHERE updated_at IS NULL");
+
   const result = await pgPool.query("SELECT COUNT(*)::int AS value FROM inventory");
   const count = result.rows?.[0]?.value ?? 0;
   if (count > 0) return;
@@ -327,8 +351,6 @@ async function ensurePgInventorySchemaAndSeed() {
     );
   }
 
-  await pgPool.query("ALTER TABLE inventory ADD COLUMN IF NOT EXISTS vehicle_type TEXT NOT NULL DEFAULT 'Sedan'");
-  await pgPool.query("UPDATE inventory SET vehicle_type = 'Sedan' WHERE vehicle_type IS NULL OR TRIM(vehicle_type) = ''");
 }
 
 const pgInventoryReady = ensurePgInventorySchemaAndSeed().catch((error) => {
