@@ -35,27 +35,30 @@ body {
 
 .app {
   min-height: 100vh;
-  padding: 22px;
+  padding: 12px;
   display: grid;
   place-items: center;
 }
 
-.auth-card,
-.crm-shell {
-  width: min(1400px, 100%);
+.auth-card {
+  width: min(520px, 100%);
   border: 1px solid var(--line);
   border-radius: 18px;
   background: linear-gradient(180deg, #161616f0, #0f0f0fee);
   box-shadow: 0 20px 44px #00000080;
 }
 
-.auth-card {
-  max-width: 520px;
-  padding: 28px;
+.crm-shell {
+  width: min(1760px, calc(100vw - 24px));
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: linear-gradient(180deg, #161616f0, #0f0f0fee);
+  box-shadow: 0 20px 44px #00000080;
+  padding: 16px;
 }
 
-.crm-shell {
-  padding: 16px;
+.auth-card {
+  padding: 28px;
 }
 
 .eyebrow {
@@ -138,7 +141,7 @@ h2 {
 
 .crm-main {
   display: grid;
-  gap: 12px;
+  gap: 16px;
 }
 
 .kpi-grid {
@@ -171,7 +174,7 @@ h2 {
   border: 1px solid var(--line-soft);
   border-radius: 14px;
   background: var(--panel);
-  padding: 12px;
+  padding: 16px;
 }
 
 .panel-head {
@@ -189,7 +192,7 @@ h2 {
 .inventory-form-row {
   display: grid;
   grid-template-columns: repeat(5, minmax(110px, 1fr));
-  gap: 8px;
+  gap: 12px;
 }
 
 .inventory-submit-btn {
@@ -214,8 +217,8 @@ h2 {
 .inventory-toolbar {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 8px;
-  margin-bottom: 10px;
+  gap: 10px;
+  margin-bottom: 14px;
 }
 
 .inventory-search {
@@ -247,17 +250,18 @@ h2 {
 
 .inventory-table {
   width: 100%;
-  min-width: 770px;
+  min-width: 980px;
   border-collapse: collapse;
   background: var(--panel-2);
 }
 
 .inventory-table th,
 .inventory-table td {
-  padding: 10px;
+  padding: 13px 14px;
   font-size: 14px;
   text-align: left;
   border-bottom: 1px solid #3d2f13;
+  vertical-align: middle;
 }
 
 .inventory-table th {
@@ -267,7 +271,8 @@ h2 {
 
 .row-actions {
   display: flex;
-  gap: 6px;
+  gap: 10px;
+  flex-wrap: nowrap;
 }
 
 .crm-chat {
