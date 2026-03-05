@@ -132,6 +132,34 @@ db.exec(`
   ON leads(last_message_at);
   CREATE INDEX IF NOT EXISTS idx_leads_phone
   ON leads(phone);
+
+  CREATE TABLE IF NOT EXISTS processed_messages (
+    message_key TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    channel TEXT,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_processed_messages_created_at
+  ON processed_messages(created_at);
+
+  CREATE TABLE IF NOT EXISTS conversation_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    channel TEXT,
+    user_id TEXT,
+    copy_variant TEXT,
+    action TEXT,
+    intent TEXT,
+    active_flow TEXT,
+    missing_fields TEXT,
+    latency_ms INTEGER,
+    error TEXT,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_conversation_events_session_created
+  ON conversation_events(session_id, created_at);
 `);
 
 function ensureSqliteColumn(tableName, columnName, definition) {
@@ -153,6 +181,7 @@ function ensureSqliteSchemaEvolution() {
   ensureSqliteColumn("leads", "mode", "TEXT DEFAULT 'BOT'");
   ensureSqliteColumn("leads", "last_message_at", "TEXT");
   ensureSqliteColumn("messages", "direction", "TEXT");
+  ensureSqliteColumn("conversation_events", "copy_variant", "TEXT");
 }
 
 ensureSqliteSchemaEvolution();
@@ -389,6 +418,32 @@ async function ensurePgMessagingSchema() {
     );
   `);
 
+  await pgPool.query(`
+    CREATE TABLE IF NOT EXISTS processed_messages (
+      message_key TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      channel TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pgPool.query(`
+    CREATE TABLE IF NOT EXISTS conversation_events (
+      id BIGSERIAL PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      channel TEXT,
+      user_id TEXT,
+      copy_variant TEXT,
+      action TEXT,
+      intent TEXT,
+      active_flow TEXT,
+      missing_fields TEXT,
+      latency_ms INTEGER,
+      error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
   await pgPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS name TEXT`);
   await pgPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS source TEXT`);
   await pgPool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS language TEXT`);
@@ -420,6 +475,14 @@ async function ensurePgMessagingSchema() {
   await pgPool.query(`
     CREATE INDEX IF NOT EXISTS idx_leads_phone
     ON leads(phone)
+  `);
+  await pgPool.query(`
+    CREATE INDEX IF NOT EXISTS idx_processed_messages_created_at
+    ON processed_messages(created_at DESC)
+  `);
+  await pgPool.query(`
+    CREATE INDEX IF NOT EXISTS idx_conversation_events_session_created
+    ON conversation_events(session_id, created_at DESC)
   `);
 }
 
@@ -694,6 +757,91 @@ export async function persistOutgoingAssistantMessage({
     return;
   }
   insertMessageStmt.run(sessionId, "assistant", "out", assistantMessage, intent, source, timestamp);
+}
+
+export async function markProcessedInboundMessage({
+  messageKey,
+  sessionId,
+  channel = "unknown",
+  createdAt = new Date().toISOString()
+}) {
+  const safeKey = String(messageKey || "").trim();
+  if (!safeKey) return false;
+
+  if (usePgInventory && pgPool) {
+    await pgMessagingReady;
+    const res = await pgPool.query(
+      `
+        INSERT INTO processed_messages (message_key, session_id, channel, created_at)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT(message_key) DO NOTHING
+        RETURNING message_key
+      `,
+      [safeKey, sessionId, channel, createdAt]
+    );
+    return Number(res.rowCount || 0) > 0;
+  }
+
+  const insert = db.prepare(
+    `
+      INSERT OR IGNORE INTO processed_messages (message_key, session_id, channel, created_at)
+      VALUES (?, ?, ?, ?)
+    `
+  );
+  const result = insert.run(safeKey, sessionId, channel, createdAt);
+  return Number(result.changes || 0) > 0;
+}
+
+export async function cleanupProcessedInboundMessages({ olderThanHours = 48 } = {}) {
+  const safeHours = Math.max(1, Number(olderThanHours || 48));
+  const thresholdIso = new Date(Date.now() - safeHours * 60 * 60 * 1000).toISOString();
+
+  if (usePgInventory && pgPool) {
+    await pgMessagingReady;
+    await pgPool.query(`DELETE FROM processed_messages WHERE created_at < $1`, [thresholdIso]);
+    return;
+  }
+
+  db.prepare(`DELETE FROM processed_messages WHERE created_at < ?`).run(thresholdIso);
+}
+
+export async function persistConversationEvent({
+  sessionId,
+  channel = "unknown",
+  userId = null,
+  copyVariant = null,
+  action = null,
+  intent = null,
+  activeFlow = null,
+  missingFields = null,
+  latencyMs = null,
+  error = null,
+  createdAt = new Date().toISOString()
+}) {
+  const missingSerialized = Array.isArray(missingFields) ? missingFields.join(",") : missingFields;
+
+  if (usePgInventory && pgPool) {
+    await pgMessagingReady;
+    await pgPool.query(
+      `
+        INSERT INTO conversation_events (
+          session_id, channel, user_id, copy_variant, action, intent, active_flow, missing_fields, latency_ms, error, created_at
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+      `,
+      [sessionId, channel, userId, copyVariant, action, intent, activeFlow, missingSerialized, latencyMs, error, createdAt]
+    );
+    return;
+  }
+
+  db.prepare(
+    `
+      INSERT INTO conversation_events (
+        session_id, channel, user_id, copy_variant, action, intent, active_flow, missing_fields, latency_ms, error, created_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `
+  ).run(sessionId, channel, userId, copyVariant, action, intent, activeFlow, missingSerialized, latencyMs, error, createdAt);
 }
 
 export async function getConversationSettings(sessionId) {
