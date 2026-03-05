@@ -1493,7 +1493,13 @@ export default function App() {
     }
   }
 
-  async function removeInventoryUnit(id) {
+  async function removeInventoryUnit(row) {
+    const id = Number(row?.id);
+    if (!id) return;
+    const label = `${row?.year || ""} ${row?.make || ""} ${row?.model || ""}`.trim();
+    const ok = window.confirm(`Eliminar ${label || "esta unidad"}? Esta accion no se puede deshacer.`);
+    if (!ok) return;
+
     setInventoryError("");
     try {
       const res = await fetch(`${DB_API_URL}/${id}`, { method: "DELETE" });
@@ -1743,7 +1749,7 @@ export default function App() {
                             <button type="button" className="secondary-btn" onClick={() => fillFormFromRow(row)}>
                               Editar
                             </button>
-                            <button type="button" className="danger-btn" onClick={() => removeInventoryUnit(row.id)}>
+                            <button type="button" className="danger-btn" onClick={() => removeInventoryUnit(row)}>
                               Eliminar
                             </button>
                           </td>
