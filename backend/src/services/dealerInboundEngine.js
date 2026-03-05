@@ -7,6 +7,7 @@ import {
   createAppointment,
   getConversationSettings,
   getLeadBySessionId,
+  getLatestAssistantIntroAt,
   getLatestOpenAppointmentForLead,
   isAppointmentSlotAvailable,
   markProcessedInboundMessage,
@@ -642,6 +643,16 @@ export async function processInboundDealerMessage({
   }
 
   const session = getDealerSession(sessionId);
+  if (!session?.context?.assistantIntroSent) {
+    const latestIntroAt = await getLatestAssistantIntroAt(sessionId);
+    if (latestIntroAt) {
+      const introTs = Date.parse(latestIntroAt);
+      if (Number.isFinite(introTs) && Date.now() - introTs < 24 * 60 * 60 * 1000) {
+        session.context.assistantIntroSent = true;
+        session.context.assistantIntroSentAt = new Date(introTs).toISOString();
+      }
+    }
+  }
   copyVariant = resolveCopyVariant({ session, stableUserId: safeUserId });
   const isActiveAppointmentFlow = session?.context?.activeFlow === "appointment";
   const appointmentStage = session?.context?.appointmentFlow?.stage || null;

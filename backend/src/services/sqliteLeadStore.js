@@ -1209,6 +1209,55 @@ export async function hasWelcomeMessageSent(sessionId) {
   return Boolean(row);
 }
 
+export async function getLatestAssistantIntroAt(sessionId) {
+  if (!sessionId) return null;
+  const introPatternA = "%Soy el asistente virtual de Empire Rey%";
+  const introPatternB = "%Soy el asistente automático de Empire Rey Auto Sales%";
+
+  if (usePgInventory && pgPool) {
+    await pgMessagingReady;
+    const result = await pgPool.query(
+      `
+        SELECT created_at
+        FROM messages
+        WHERE session_id = $1
+          AND role = 'assistant'
+          AND (
+            content ILIKE $2
+            OR content ILIKE $3
+            OR source = 'greeting-fastpath'
+            OR intent = 'welcome'
+          )
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1
+      `,
+      [sessionId, introPatternA, introPatternB]
+    );
+    return result.rows?.[0]?.created_at || null;
+  }
+
+  const row = db
+    .prepare(
+      `
+      SELECT created_at
+      FROM messages
+      WHERE session_id = ?
+        AND role = 'assistant'
+        AND (
+          content LIKE ?
+          OR content LIKE ?
+          OR source = 'greeting-fastpath'
+          OR intent = 'welcome'
+        )
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1
+      `
+    )
+    .get(sessionId, introPatternA, introPatternB);
+
+  return row?.created_at || null;
+}
+
 export async function listDealerMessagesBySession(sessionId, { limit = 200, beforeId = null } = {}) {
   const safeLimit = Number.isFinite(Number(limit)) ? Math.max(1, Math.min(1000, Number(limit))) : 200;
   const safeBeforeId = Number.isFinite(Number(beforeId)) ? Number(beforeId) : null;
