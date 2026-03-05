@@ -97,8 +97,10 @@ const OPENING_PROMO_MESSAGE =
   "• Conectarte directamente con Rey\n" +
   "• Contactar a nuestro mecánico";
 
-const REY_CONTACT_REPLY = "Si deseas hablar con Rey o con el vendedor de carros, este es el contacto:\n+1 (502) 576-8116\nEmpire Rey";
-const MECHANIC_CONTACT_REPLY = "Sobre el mecanico: pronto estara disponible su contacto.";
+const REY_CONTACT_REPLY = "Perfecto, te conecto con Rey para ayudarte directamente.\n+1 (502) 576-8116";
+const MECHANIC_CONTACT_REPLY = "Si, tambien ofrecemos servicio mecanico. Que reparacion o servicio necesitas?";
+const DEALER_ADDRESS_REPLY = "Estamos en 3510 Dixie Hwy, Louisville, Kentucky, USA.";
+const DEALER_PHONES_REPLY = "Puedes llamarnos al (502) 576-8116 o (502) 780-1096.";
 
 const leadMemory = {
   model: null,
@@ -274,6 +276,89 @@ function asksForReyOrSalesContact(text) {
 
 function asksForMechanicContact(text) {
   return /(mecanico|mec[aá]nico|mechanic|taller|servicio mecanico|service department)/i.test(text || "");
+}
+
+function asksForItinOrIdDocs(text) {
+  return /(itin|itn|solo id|con id|identificacion|identificación|documentos|papeles|requisitos?)/i.test(text || "");
+}
+
+function asksForLowOrNoCredit(text) {
+  return /(credito bajo|cr[eé]dito bajo|sin credito|sin cr[eé]dito|mal credito|mal cr[eé]dito|credit score|score bajo|no tengo credito|no tengo cr[eé]dito|sin historial)/i.test(
+    text || ""
+  );
+}
+
+function asksForLocation(text) {
+  return /(donde estan|d[oó]nde est[aá]n|donde se ubican|ubicacion|ubicación|direccion|dirección|address|location|dixie)/i.test(
+    text || ""
+  );
+}
+
+function asksForPhones(text) {
+  return /(telefono|tel[eé]fono|numeros?|n[úu]meros?|llamar|call|contacto)/i.test(text || "");
+}
+
+function asksForWeeklyPayments(text) {
+  return /(pagos?\s+semanales?|plan semanal|weekly)/i.test(text || "");
+}
+
+function asksForTradeIn(text) {
+  return /(trade[\s-]*in|parte de pago|entregar mi carro|intercambio|carro usado)/i.test(text || "");
+}
+
+function buildBusinessFaqFastpath(message, context, extracted) {
+  const safeMessage = String(message || "");
+  const intent = "question";
+
+  let reply = null;
+  let source = "faq-fastpath";
+  let skill = { stage: "faq", nextObjective: "Resolver pregunta clave y avanzar a cita", confidence: 0.99 };
+  let suggestions = ["Pedir tipo de carro (sedan, SUV o pickup) para avanzar."];
+
+  if (asksForItinOrIdDocs(safeMessage)) {
+    reply =
+      "Si, en Empire Rey trabajamos con ITIN o ID y tambien con credito bajo o sin credito. Que tipo de carro buscas: sedan, SUV o pickup?";
+    skill = { stage: "faq_docs", nextObjective: "Calificar necesidad y presupuesto", confidence: 0.99 };
+  } else if (asksForLowOrNoCredit(safeMessage)) {
+    reply =
+      "No necesitas credito perfecto. Revisamos opciones segun tu caso. Cuanto puedes dar de down payment y pago semanal?";
+    skill = { stage: "faq_credit", nextObjective: "Capturar down payment y pago objetivo", confidence: 0.99 };
+  } else if (asksForLocation(safeMessage)) {
+    reply = DEALER_ADDRESS_REPLY;
+    skill = { stage: "faq_location", nextObjective: "Llevar a visita en dealer", confidence: 0.99 };
+    suggestions = ["Ofrecer agendar visita hoy o manana."];
+  } else if (asksForPhones(safeMessage)) {
+    reply = DEALER_PHONES_REPLY;
+    skill = { stage: "faq_contact", nextObjective: "Cerrar llamada o cita", confidence: 0.99 };
+    suggestions = ["Invitar a llamada o cita inmediata."];
+  } else if (asksForWeeklyPayments(safeMessage)) {
+    reply = "Si, manejamos planes de pago semanales segun unidad y perfil. Que pago semanal te acomoda?";
+    skill = { stage: "faq_payments", nextObjective: "Definir rango de pago", confidence: 0.99 };
+  } else if (asksForTradeIn(safeMessage)) {
+    reply = "Si, recibimos tu auto usado como parte de pago. Que ano, marca y millaje tiene?";
+    skill = { stage: "faq_trade_in", nextObjective: "Capturar datos del trade-in", confidence: 0.99 };
+  } else if (asksForMechanicContact(safeMessage)) {
+    reply = MECHANIC_CONTACT_REPLY;
+    source = "service-fastpath";
+    skill = { stage: "service-info", nextObjective: "Capturar necesidad mecanica", confidence: 0.99 };
+    suggestions = ["Solicitar ano, marca y falla principal del vehiculo."];
+  }
+
+  if (!reply) return null;
+
+  const updatedContext = mergeContext(context, extracted, intent);
+  const entities = buildEntitySnapshot(extracted, updatedContext);
+
+  return {
+    reply,
+    intent,
+    entities,
+    suggestions,
+    skill,
+    source,
+    mediaUrl: null,
+    updatedContext
+  };
 }
 
 function safeJsonParse(text) {
@@ -1025,9 +1110,10 @@ export async function generateDealerResponse(message, context = {}) {
 
 export async function processDealerSessionMessage(message, context = {}, learningState = {}) {
   const safeMessage = normalizeText(message);
+  const extracted = extractEntities(safeMessage);
+
   if (asksForReyOrSalesContact(safeMessage)) {
     const intent = "question";
-    const extracted = extractEntities(safeMessage);
     const updatedContext = mergeContext(context, extracted, intent);
     const entities = buildEntitySnapshot(extracted, updatedContext);
     const skill = { stage: "handoff", nextObjective: "Compartir contacto comercial", confidence: 0.99 };
@@ -1043,9 +1129,11 @@ export async function processDealerSessionMessage(message, context = {}, learnin
     };
   }
 
+  const businessFaqFastpath = buildBusinessFaqFastpath(safeMessage, context, extracted);
+  if (businessFaqFastpath) return businessFaqFastpath;
+
   if (asksForMechanicContact(safeMessage)) {
     const intent = "question";
-    const extracted = extractEntities(safeMessage);
     const updatedContext = mergeContext(context, extracted, intent);
     const entities = buildEntitySnapshot(extracted, updatedContext);
     const skill = { stage: "service-info", nextObjective: "Gestionar consulta de mecanico", confidence: 0.99 };
@@ -1080,7 +1168,6 @@ export async function processDealerSessionMessage(message, context = {}, learnin
   }
 
   const intent = detectSalesIntent(safeMessage);
-  const extracted = extractEntities(safeMessage);
   const { reply, updatedContext } = await generateDealerResponse(safeMessage, context);
   const entities = buildEntitySnapshot(extracted, updatedContext);
 
@@ -1139,6 +1226,9 @@ export async function processDealerSessionMessageWithLLM(message, context = {}, 
       updatedContext
     };
   }
+
+  const businessFaqFastpath = buildBusinessFaqFastpath(safeMessage, context, extracted);
+  if (businessFaqFastpath) return businessFaqFastpath;
 
   if (asksForMechanicContact(safeMessage)) {
     const intent = "question";
@@ -1412,6 +1502,21 @@ BEHAVIOR RULES
 - Never hallucinate vehicles.
 - Never negotiate price.
 - Never provide legal or financial guarantees.
+
+FAQ PRIORITY RULES (MANDATORY)
+- If user asks about ITIN or ID, answer directly: Empire Rey works with ITIN or ID and also low/no-credit customers.
+- If user asks about low/no credit, answer directly first, then ask down payment and weekly payment range.
+- If user asks location, answer exactly: 3510 Dixie Hwy, Louisville, Kentucky, USA.
+- If user asks phones, answer exactly: (502) 576-8116 and (502) 780-1096.
+- If user asks weekly payments, confirm weekly plans are available by unit/profile.
+- If user asks trade-in, confirm used car as part of payment and ask year/make/mileage.
+- If user asks mechanic service, confirm mechanic service is available.
+- Never replace these FAQ answers with generic inventory qualification.
+
+TERM DEFINITIONS
+- ITIN: IRS tax processing number; not a work authorization or immigration status.
+- Low/no credit: limited or low credit history; does not imply automatic rejection.
+- ID: valid government-issued identification (state ID, driver license, passport, or consular ID).
 
 INVENTORY RULES
 - Only show vehicles with status = "available".
