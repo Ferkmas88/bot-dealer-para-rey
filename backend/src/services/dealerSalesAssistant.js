@@ -88,21 +88,19 @@ const BUSINESS_HOURS = {
 
 const DAY_INDEX_TO_SPANISH = ["domingo", "lunes", "martes", "miercoles", "jueves", "viernes", "sabado"];
 
+const DEALER_GENERIC_MESSAGE =
+  "🚗 Empire Rey Auto Sales | Louisville, KY\n" +
+  "Aprobacion rapida, financiamiento flexible y opciones reales para que salgas manejando.";
+const VIRTUAL_ASSISTANT_LINE = "Soy el asistente virtual de Empire Rey y te puedo ayudar en todo.";
 const OPENING_PROMO_MESSAGE =
-  "Hola 👋\n" +
-  "Soy el asistente virtual de Empire Rey Auto Sales.\n\n" +
-  "🚨 ¡QUE HUBO MI GENTE LINDA DE KENTUCKY! 🚨\n" +
-  "🚗 ¿Acabas de llegar al pais? ¡Ya puedes tener tu carro!\n" +
-  "📞 Llamanos hoy mismo:\n" +
-  "Reyder Quevedo\n" +
-  "502 576 8116\n" +
-  "502 780 1096\n" +
-  "3510 Dixie Hwy 40216\n\n" +
-  "💥 TODAS LAS APLICACIONES SON APROBADAS 💥\n" +
-  "✅ ¿No tienes buen credito? ¡APROBADO!\n" +
-  "✅ ¿Solo tienes tu ID? ¡APROBADO!\n" +
-  "✅ ¿Madre soltera? ¡Tenemos planes especiales para ti desde $85/semana!\n" +
-  "✅ ¿Tienes un carro viejo? ¡Lo recibimos como parte de pago!";
+  `${DEALER_GENERIC_MESSAGE}\n\n` +
+  `${VIRTUAL_ASSISTANT_LINE}\n\n` +
+  "Te ayudo con:\n" +
+  "• Buscar carro\n" +
+  "• Pagos semanales\n" +
+  "• Cita hoy mismo\n" +
+  "• Hablar directo con Rey (502 576 8116 / 502 780 1096)";
+const INTRO_RESET_HOURS = 24;
 
 const REY_CONTACT_REPLY = "Perfecto, te conecto con Rey para ayudarte directamente.\n+1 (502) 576-8116";
 const MECHANIC_CONTACT_REPLY = "Si, tambien ofrecemos servicio mecanico. Que reparacion o servicio necesitas?";
@@ -207,21 +205,33 @@ function isGenericGreetingMessage(text) {
 export function applyFirstTouchPolicy({ message, context = {}, aiResult }) {
   if (!aiResult || typeof aiResult !== "object") return aiResult;
 
-  const introSent = Boolean(context?.assistantIntroSent);
+  const introSentAt = context?.assistantIntroSentAt ? Date.parse(context.assistantIntroSentAt) : NaN;
+  const introExpired = Number.isFinite(introSentAt)
+    ? Date.now() - introSentAt > INTRO_RESET_HOURS * 60 * 60 * 1000
+    : false;
+  const introSent = Boolean(context?.assistantIntroSent) && !introExpired;
   const baseUpdatedContext = aiResult.updatedContext && typeof aiResult.updatedContext === "object" ? aiResult.updatedContext : {};
 
   if (introSent) {
-    aiResult.updatedContext = { ...baseUpdatedContext, assistantIntroSent: true };
+    aiResult.updatedContext = {
+      ...baseUpdatedContext,
+      assistantIntroSent: true,
+      assistantIntroSentAt: context?.assistantIntroSentAt || new Date().toISOString()
+    };
     return aiResult;
   }
 
   if (isGenericGreetingMessage(message)) {
     aiResult.reply = OPENING_PROMO_MESSAGE;
   } else {
-    aiResult.reply = `${OPENING_PROMO_MESSAGE}\n\n${aiResult.reply}`;
+    aiResult.reply = `${DEALER_GENERIC_MESSAGE}\n\n${VIRTUAL_ASSISTANT_LINE}\n\n${aiResult.reply}`;
   }
 
-  aiResult.updatedContext = { ...baseUpdatedContext, assistantIntroSent: true };
+  aiResult.updatedContext = {
+    ...baseUpdatedContext,
+    assistantIntroSent: true,
+    assistantIntroSentAt: new Date().toISOString()
+  };
   return aiResult;
 }
 
@@ -253,6 +263,12 @@ function hasDatabaseLookupSignal(text) {
 
 function hasBusinessHoursSignal(text) {
   return /(horario|horarios|hora|horas|abren|abierto|abiertos|cierran|cerrado|cerrados|open|opened|close|closed|business hours)/i.test(
+    text || ""
+  );
+}
+
+function asksOwnAppointmentTime(text) {
+  return /(mi cita|tengo cita|ya tengo cita|cuando es mi cita|a que hora es la cita|qué hora es la cita|que hora es la cita|hora de mi cita)/i.test(
     text || ""
   );
 }
@@ -359,14 +375,11 @@ function asksHowToApply(text) {
 function buildCheapCarFastpath(context, extracted) {
   const intent = "buying_interest";
   const reply =
-    "Soy el asistente virtual de Empire Rey y si, te ayudo a encontrar un carro barato.\n" +
-    "Podemos ayudarte con:\n" +
-    "- Opciones economicas (incluyendo opciones por debajo de $6,000 cuando haya disponibilidad)\n" +
-    "- Pagos semanales segun unidad y perfil\n" +
-    "- No necesitas ITIN para empezar el proceso; tambien trabajamos con ID o credito bajo\n" +
-    "- Agendar cita para que salgas manejando hoy\n\n" +
-    "Que buscas: sedan, SUV o pickup? Y cuanto puedes dar de down payment?\n\n" +
-    "Si quieres hablar directo, llama a Rey al 502 576 8116 o 502 780 1096.";
+    "Perfecto ✅ Te ayudo con opciones economicas (incluyendo unidades por debajo de $6,000 cuando haya).\n" +
+    "Trabajamos con ITIN/ID y credito bajo.\n" +
+    "Que prefieres: Sedan, SUV o Pickup?\n" +
+    "Y cuanto tienes para down payment aprox?\n" +
+    "Con eso te separo opciones y te agendo hoy o manana.";
 
   const updatedContext = mergeContext(context, extracted, intent);
   const entities = buildEntitySnapshot(extracted, updatedContext);
@@ -398,28 +411,37 @@ function buildBusinessFaqFastpath(message, context, extracted) {
 
   if (asksForItinOrIdDocs(safeMessage)) {
     reply =
-      "Si, en Empire Rey trabajamos con ITIN o ID y tambien con credito bajo o sin credito. Que tipo de carro buscas: sedan, SUV o pickup?";
+      "Si, trabajamos con ITIN o ID y tambien con credito bajo/sin credito.\n" +
+      "Perfecto ✅ Que prefieres: Sedan, SUV o Pickup?\n" +
+      "Y cuanto tienes para down payment aprox para avanzar a cita?";
     skill = { stage: "faq_docs", nextObjective: "Calificar necesidad y presupuesto", confidence: 0.99 };
   } else if (asksForLowOrNoCredit(safeMessage)) {
     reply =
-      "No necesitas credito perfecto. Revisamos opciones segun tu caso. Cuanto puedes dar de down payment y pago semanal?";
+      "No necesitas credito perfecto. Revisamos opciones segun tu caso.\n" +
+      "Primero: que tipo de carro buscas (Sedan, SUV o Pickup) y cuanto tienes para down payment?\n" +
+      "Con eso te separo opciones y te agendo hoy o manana.";
     skill = { stage: "faq_credit", nextObjective: "Capturar down payment y pago objetivo", confidence: 0.99 };
   } else if (asksForLocation(safeMessage)) {
-    reply = DEALER_ADDRESS_REPLY;
+    reply = `${DEALER_ADDRESS_REPLY}\nListo. Te agendo hoy o manana para ver opciones?`;
     skill = { stage: "faq_location", nextObjective: "Llevar a visita en dealer", confidence: 0.99 };
     suggestions = ["Ofrecer agendar visita hoy o manana."];
   } else if (asksForPhones(safeMessage)) {
-    reply = DEALER_PHONES_REPLY;
+    reply = `${DEALER_PHONES_REPLY}\nSi quieres, te agendo ahora: hoy o manana?`;
     skill = { stage: "faq_contact", nextObjective: "Cerrar llamada o cita", confidence: 0.99 };
     suggestions = ["Invitar a llamada o cita inmediata."];
   } else if (asksForWeeklyPayments(safeMessage)) {
-    reply = "Si, manejamos planes de pago semanales segun unidad y perfil. Que pago semanal te acomoda?";
+    reply =
+      "Si, manejamos pagos semanales segun unidad y perfil.\n" +
+      "Primero te ubico el carro: Sedan, SUV o Pickup y tu down payment aprox.\n" +
+      "Luego afinamos pago semanal y te agendo cita.";
     skill = { stage: "faq_payments", nextObjective: "Definir rango de pago", confidence: 0.99 };
   } else if (asksForTradeIn(safeMessage)) {
-    reply = "Si, recibimos tu auto usado como parte de pago. Que ano, marca y millaje tiene?";
+    reply = "Si, recibimos tu auto usado como parte de pago. Que ano, marca y millaje tiene?\nTe agendo hoy o manana para evaluarlo?";
     skill = { stage: "faq_trade_in", nextObjective: "Capturar datos del trade-in", confidence: 0.99 };
   } else if (asksHowToApply(safeMessage)) {
-    reply = "Para aplicar rapido, llama a Rey al 502 576 8116 o 502 780 1096 y te guia directo.";
+    reply =
+      "Para aplicar rapido, llama a Rey al 502 576 8116 o 502 780 1096.\n" +
+      "Si prefieres por aqui: dime Sedan, SUV o Pickup y tu down payment para agendarte.";
     skill = { stage: "faq_apply", nextObjective: "Conectar llamada con asesor", confidence: 0.99 };
     suggestions = ["Confirmar si desea llamada o visita hoy."];
   } else if (asksForMechanicContact(safeMessage)) {
@@ -1238,7 +1260,7 @@ export async function processDealerSessionMessage(message, context = {}, learnin
     };
   }
 
-  if (hasBusinessHoursSignal(safeMessage)) {
+  if (hasBusinessHoursSignal(safeMessage) && !asksOwnAppointmentTime(safeMessage)) {
     const intent = "question";
     const extracted = extractEntities(safeMessage);
     const updatedContext = mergeContext(context, extracted, intent);
@@ -1291,7 +1313,7 @@ function timeoutAfter(ms) {
   });
 }
 
-export async function processDealerSessionMessageWithLLM(message, context = {}, learningState = {}) {
+export async function processDealerSessionMessageWithLLM(message, context = {}, learningState = {}, _options = {}) {
   const safeMessage = normalizeText(message);
   const llmTotalTimeout = Number(process.env.LLM_TOTAL_TIMEOUT_MS || 6500);
   const extracted = extractEntities(safeMessage);
@@ -1340,7 +1362,7 @@ export async function processDealerSessionMessageWithLLM(message, context = {}, 
     };
   }
 
-  if (hasBusinessHoursSignal(safeMessage)) {
+  if (hasBusinessHoursSignal(safeMessage) && !asksOwnAppointmentTime(safeMessage)) {
     const intent = "question";
     const updatedContext = mergeContext(context, extracted, intent);
     const entities = buildEntitySnapshot(extracted, updatedContext);
@@ -1724,6 +1746,12 @@ Return ONLY valid JSON with this shape:
   } catch {
     return await processDealerSessionMessage(safeMessage, context, learningState);
   }
+}
+
+export async function handleDealerMessage({ message, context = {}, learningState = {}, channel = "unknown" }) {
+  const aiResult = await processDealerSessionMessageWithLLM(message, context, learningState, { channel });
+  applyFirstTouchPolicy({ message, context, aiResult });
+  return aiResult;
 }
 
 

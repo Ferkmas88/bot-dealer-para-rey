@@ -7,6 +7,7 @@ const geminiApiKey = process.env.GEMINI_API_KEY || "";
 const hasOpenAI = Boolean(openaiApiKey && openaiApiKey !== "tu_api_key");
 const hasCerebras = Boolean(cerebrasApiKey && cerebrasApiKey !== "tu_api_key");
 const hasGemini = Boolean(geminiApiKey && geminiApiKey !== "tu_api_key");
+export const hasAnyLlmProvider = hasOpenAI || hasCerebras || hasGemini;
 
 if (!hasOpenAI) {
   console.warn("OPENAI_API_KEY is not configured or invalid.");
