@@ -9,7 +9,15 @@ import {
   saveDealerFeedback,
   saveDealerTurn
 } from "../services/dealerSessionStore.js";
-import { getLatestOpenAppointmentForLead, getStorageHealth, listInventory } from "../services/sqliteLeadStore.js";
+import {
+  createAppointment,
+  getLatestOpenAppointmentForLead,
+  getStorageHealth,
+  listInventory,
+  updateAppointment,
+  updateLeadStatus,
+  upsertLeadProfile
+} from "../services/sqliteLeadStore.js";
 
 const payloadSchema = z.object({
   message: z.string().min(1),
@@ -133,6 +141,50 @@ function asksOwnAppointment(message = "") {
   return /(mi cita|tengo cita|ya tengo cita|cuando es mi cita|a que hora es mi cita|hora de mi cita)/i.test(String(message || ""));
 }
 
+function asksCreateAppointment(message = "") {
+  return /(agendar cita|agendo cita|quiero cita|crear cita|hacer cita|programar cita|book appointment)/i.test(String(message || ""));
+}
+
+function asksCancelAppointment(message = "") {
+  return /(cancelar cita|eliminar cita|borrar cita|cancel my appointment|cancel appointment)/i.test(String(message || ""));
+}
+
+function parseRequestedSchedule(message = "") {
+  const raw = String(message || "");
+  const lower = raw.toLowerCase();
+  const explicitDate = raw.match(/\b(20\d{2})-(\d{2})-(\d{2})\b/);
+  const timeMatch = lower.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/);
+  if (!timeMatch && !explicitDate) return null;
+
+  const now = new Date();
+  const target = new Date(now);
+
+  if (explicitDate) {
+    target.setFullYear(Number(explicitDate[1]), Number(explicitDate[2]) - 1, Number(explicitDate[3]));
+  } else if (/pasado manana|pasado mañana/.test(lower)) {
+    target.setDate(target.getDate() + 2);
+  } else if (/manana|mañana|tomorrow/.test(lower)) {
+    target.setDate(target.getDate() + 1);
+  }
+
+  if (timeMatch) {
+    let hour = Number(timeMatch[1]);
+    const minute = Number(timeMatch[2] || 0);
+    const ap = timeMatch[3];
+    if (ap === "pm" && hour < 12) hour += 12;
+    if (ap === "am" && hour === 12) hour = 0;
+    target.setHours(hour, minute, 0, 0);
+  } else {
+    target.setHours(11, 0, 0, 0);
+  }
+
+  if (!explicitDate && !/hoy|today|manana|mañana|tomorrow|pasado manana|pasado mañana/.test(lower) && target.getTime() <= now.getTime()) {
+    target.setDate(target.getDate() + 1);
+  }
+
+  return target.toISOString();
+}
+
 dealerAiRouter.post("/dealer/ai", async (req, res) => {
   try {
     const parsed = payloadSchema.safeParse(req.body);
@@ -148,7 +200,89 @@ dealerAiRouter.post("/dealer/ai", async (req, res) => {
     const learningState = getLearningState(sessionId);
 
     let aiResult;
-    if (asksOwnAppointment(message)) {
+    if (asksCancelAppointment(message)) {
+      const appointment = await getLatestOpenAppointmentForLead(sessionId);
+      if (!appointment) {
+        aiResult = {
+          reply: "No veo una cita activa para cancelar con este numero.",
+          intent: "appointment_flow",
+          entities: { model: null, budget: null, date: null, contact: { email: null, phone: null } },
+          suggestions: ["Agendar nueva cita"],
+          skill: { stage: "appointment", nextObjective: "Crear cita nueva", confidence: 0.9 },
+          source: "appointment-cancel",
+          mediaUrl: null
+        };
+      } else {
+        const cancelledAt = new Date().toISOString();
+        await updateAppointment(appointment.id, {
+          status: "CANCELLED",
+          confirmation_state: "CANCELLED",
+          cancelled_at: cancelledAt
+        });
+        await updateLeadStatus(sessionId, "NO_RESPONSE");
+        aiResult = {
+          reply: "Listo, tu cita fue cancelada. Si quieres te propongo nuevos horarios.",
+          intent: "appointment_flow",
+          entities: { model: null, budget: null, date: null, contact: { email: null, phone: null } },
+          suggestions: ["Agendar nueva cita", "Ver horarios disponibles"],
+          skill: { stage: "appointment", nextObjective: "Reagendar", confidence: 0.95 },
+          source: "appointment-cancel",
+          mediaUrl: null
+        };
+      }
+    } else if (asksCreateAppointment(message)) {
+      const scheduledAt = parseRequestedSchedule(message);
+      if (!scheduledAt) {
+        aiResult = {
+          reply: "Claro. Dime dia y hora para agendar tu cita (ejemplo: manana 11am).",
+          intent: "appointment_flow",
+          entities: { model: null, budget: null, date: null, contact: { email: null, phone: null } },
+          suggestions: ["Manana 11am", "Manana 4pm"],
+          skill: { stage: "appointment", nextObjective: "Capturar horario", confidence: 0.9 },
+          source: "appointment-create",
+          mediaUrl: null
+        };
+      } else {
+        await upsertLeadProfile({
+          sessionId,
+          source: "whatsapp",
+          language: "es",
+          intent: "appointment_flow",
+          status: "APPT_PENDING",
+          lastMessageAt: new Date().toISOString()
+        });
+        const existing = await getLatestOpenAppointmentForLead(sessionId);
+        let row;
+        if (existing) {
+          row = await updateAppointment(existing.id, {
+            scheduled_at: scheduledAt,
+            status: "PENDING",
+            confirmation_state: "RESCHEDULE_REQUESTED"
+          });
+        } else {
+          row = await createAppointment({
+            lead_session_id: sessionId,
+            scheduled_at: scheduledAt,
+            status: "PENDING",
+            confirmation_state: "PROPOSED",
+            notes: "Creada por bot /dealer/ai"
+          });
+        }
+        const when = new Date(row?.scheduled_at || scheduledAt);
+        const whenText = Number.isNaN(when.getTime())
+          ? String(row?.scheduled_at || scheduledAt)
+          : when.toLocaleString("en-US", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+        aiResult = {
+          reply: `Perfecto, ya deje tu cita para ${whenText}. Si quieres la puedo reprogramar o cancelar.`,
+          intent: "appointment_flow",
+          entities: { model: null, budget: null, date: row?.scheduled_at || scheduledAt, contact: { email: null, phone: null } },
+          suggestions: ["Confirmar cita", "Reprogramar cita", "Cancelar cita"],
+          skill: { stage: "appointment", nextObjective: "Confirmar asistencia", confidence: 0.95 },
+          source: "appointment-create",
+          mediaUrl: null
+        };
+      }
+    } else if (asksOwnAppointment(message)) {
       const appointment = await getLatestOpenAppointmentForLead(sessionId);
       if (appointment) {
         const when = new Date(appointment.scheduled_at);
