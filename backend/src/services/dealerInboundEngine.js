@@ -21,8 +21,10 @@ import {
 import { sendAppointmentConfirmedOwnerEmail, sendHotLeadHandoffOwnerEmail } from "./ownerNotifications.js";
 
 const DEALER_ADDRESS_TEXT = "3510 Dixie Hwy, Louisville, KY 40216";
-const MECHANIC_CONTACT_REPLY = "Sobre el mecanico: pronto estara disponible su contacto.";
-const BUSINESS_HOURS_REPLY = "Trabajamos de lunes a sabado de 11:00 AM a 8:00 PM y domingo de 11:00 AM a 4:00 PM.";
+const MECHANIC_CONTACT_REPLY =
+  "Si, contamos con servicio mecanico. Llamanos al (502) 576-8116 o (502) 780-1096 y te apoyamos con revision.";
+const BUSINESS_HOURS_REPLY =
+  "Trabajamos de lunes a sabado de 11:00 AM a 8:00 PM y domingo de 11:00 AM a 4:00 PM. Si quieres, te agendo cita para visitarnos.";
 const TRADE_IN_REPLY =
   "Si, recibimos tu auto usado como parte de pago. Comparte ano, marca, modelo y millaje para darte un estimado rapido.";
 const DOCS_REPLY =
@@ -160,7 +162,9 @@ function asksAddress(text) {
 }
 
 function asksMechanic(text) {
-  return /(mecanico|mec[aá]nico|mechanic|servicio mecanico|servicio mec[aá]nico|taller)/i.test(String(text || ""));
+  return /(mecanico|mec[a?]nico|mechanic|taller|servicio mecanico|servicio mec[a?]nico|reparacion|reparaciones|arreglan|frenos|aceite|motor|diagnostico|diagn?stico|revisar mi carro|contacto.*mec)/i.test(
+    String(text || "")
+  );
 }
 
 function asksBusinessHours(text) {
@@ -183,6 +187,12 @@ function asksBuyingDocs(text) {
 
 function asksFinancingBasics(text) {
   return /(itin|solo tengo id|sin credito|credito bajo|mal credito|financiamiento interno|aprobacion|aprueban)/i.test(
+    String(text || "")
+  );
+}
+
+function asksVisitIntent(text) {
+  return /(puedo ir|quiero ir|puedo pasar|pasar ahora|visitar|ver los carros|ver carros|en persona|como hago una cita|hacer una cita)/i.test(
     String(text || "")
   );
 }
@@ -901,6 +911,18 @@ export async function processInboundDealerMessage({
     await persistOutgoingAssistantMessage({ sessionId, assistantMessage: reply, source: "finance-fastpath", intent: "finance_info" });
     await emitEvent({ action: "faq_finance", intent: "finance_info", activeFlow: session?.context?.activeFlow || null });
     return { reply, mediaUrl: null, shouldReply: true, shouldNotifyInboundPush: false, kind: "finance-fastpath" };
+  }
+
+  if (asksVisitIntent(incomingText)) {
+    const reply = applyFirstTouchToReply({
+      session,
+      incomingText,
+      reply: "Perfecto. Si quieres, te agendo cita para venir a ver los carros. Dime que dia y hora te funciona."
+    });
+    await persistIncomingUserMessage({ sessionId, userMessage: incomingText, source: "visit-fastpath" });
+    await persistOutgoingAssistantMessage({ sessionId, assistantMessage: reply, source: "visit-fastpath", intent: "appointment_flow" });
+    await emitEvent({ action: "visit_fastpath", intent: "appointment_flow", activeFlow: session?.context?.activeFlow || null });
+    return { reply, mediaUrl: null, shouldReply: true, shouldNotifyInboundPush: false, kind: "visit-fastpath" };
   }
 
   if (handoffToHuman) {
