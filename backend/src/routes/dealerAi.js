@@ -9,7 +9,7 @@ import {
   saveDealerFeedback,
   saveDealerTurn
 } from "../services/dealerSessionStore.js";
-import { getStorageHealth, listInventory } from "../services/sqliteLeadStore.js";
+import { getLatestOpenAppointmentForLead, getStorageHealth, listInventory } from "../services/sqliteLeadStore.js";
 
 const payloadSchema = z.object({
   message: z.string().min(1),
@@ -129,6 +129,10 @@ function buildInventoryReplyForMessage(message, rows = []) {
   return `${buildLiveInventorySummaryReply(rows)} (Inventario total: ${total}, disponibles: ${available.length}, reservados: ${reserved.length}, vendidos: ${sold.length}).`;
 }
 
+function asksOwnAppointment(message = "") {
+  return /(mi cita|tengo cita|ya tengo cita|cuando es mi cita|a que hora es mi cita|hora de mi cita)/i.test(String(message || ""));
+}
+
 dealerAiRouter.post("/dealer/ai", async (req, res) => {
   try {
     const parsed = payloadSchema.safeParse(req.body);
@@ -144,7 +148,52 @@ dealerAiRouter.post("/dealer/ai", async (req, res) => {
     const learningState = getLearningState(sessionId);
 
     let aiResult;
-    if (isInventoryOrBrandRequest(message)) {
+    if (asksOwnAppointment(message)) {
+      const appointment = await getLatestOpenAppointmentForLead(sessionId);
+      if (appointment) {
+        const when = new Date(appointment.scheduled_at);
+        const whenText = Number.isNaN(when.getTime())
+          ? String(appointment.scheduled_at)
+          : when.toLocaleString("en-US", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+        aiResult = {
+          reply: `Si, tienes una cita registrada para ${whenText}. Si quieres, te ayudo a confirmar, reprogramar o cancelar.`,
+          intent: "appointment_flow",
+          entities: {
+            model: null,
+            budget: null,
+            date: appointment.scheduled_at,
+            contact: { email: null, phone: null }
+          },
+          suggestions: ["Confirmar cita", "Reprogramar cita", "Cancelar cita"],
+          skill: {
+            stage: "appointment",
+            nextObjective: "Gestionar cita existente",
+            confidence: 0.95
+          },
+          source: "appointment-lookup",
+          mediaUrl: null
+        };
+      } else {
+        aiResult = {
+          reply: "No veo una cita activa con este numero. Si quieres te la agendo ahora, dime dia y hora.",
+          intent: "appointment_flow",
+          entities: {
+            model: null,
+            budget: null,
+            date: null,
+            contact: { email: null, phone: null }
+          },
+          suggestions: ["Agendar para manana", "Agendar este fin de semana"],
+          skill: {
+            stage: "appointment",
+            nextObjective: "Crear cita nueva",
+            confidence: 0.9
+          },
+          source: "appointment-lookup",
+          mediaUrl: null
+        };
+      }
+    } else if (isInventoryOrBrandRequest(message)) {
       try {
         const rows = await listInventory();
         aiResult = {
