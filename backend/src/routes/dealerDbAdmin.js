@@ -184,9 +184,14 @@ function normalizePhoneForWhatsapp(raw) {
 export const dealerDbAdminRouter = Router();
 
 dealerDbAdminRouter.get("/dealer/db/inventory", async (req, res) => {
-  const status = typeof req.query.status === "string" ? req.query.status : null;
-  const rows = await listInventory({ status });
-  return res.json({ rows });
+  try {
+    const status = typeof req.query.status === "string" ? req.query.status : null;
+    const rows = await listInventory({ status });
+    return res.json({ rows });
+  } catch (error) {
+    console.error("GET /dealer/db/inventory failed:", error?.message || error);
+    return res.status(500).json({ error: "Failed to load inventory" });
+  }
 });
 
 dealerDbAdminRouter.get("/dealer/db/inventory/:id", async (req, res) => {
@@ -327,10 +332,15 @@ dealerDbAdminRouter.post("/dealer/db/appointments/:id/confirm", async (req, res)
 });
 
 dealerDbAdminRouter.get("/dealer/db/conversations", async (req, res) => {
-  const limit = typeof req.query.limit === "string" ? Number(req.query.limit) : 100;
-  const query = typeof req.query.query === "string" ? req.query.query : "";
-  const rows = await listDealerConversations({ limit, query });
-  return res.json({ rows });
+  try {
+    const limit = typeof req.query.limit === "string" ? Number(req.query.limit) : 100;
+    const query = typeof req.query.query === "string" ? req.query.query : "";
+    const rows = await listDealerConversations({ limit, query });
+    return res.json({ rows });
+  } catch (error) {
+    console.error("GET /dealer/db/conversations failed:", error?.message || error);
+    return res.status(500).json({ error: "Failed to load conversations" });
+  }
 });
 
 dealerDbAdminRouter.delete("/dealer/db/conversations/:sessionId", async (req, res) => {
@@ -399,25 +409,40 @@ dealerDbAdminRouter.post("/dealer/db/conversations/create-contact", async (req, 
 });
 
 dealerDbAdminRouter.get("/dealer/db/conversations/:sessionId/messages", async (req, res) => {
-  const sessionId = req.params.sessionId;
-  const limit = typeof req.query.limit === "string" ? Number(req.query.limit) : 500;
-  const beforeId = typeof req.query.before_id === "string" ? Number(req.query.before_id) : null;
-  const rows = await listDealerMessagesBySession(sessionId, { limit, beforeId });
-  const settings = await getConversationSettings(sessionId);
-  return res.json({ rows, settings });
+  try {
+    const sessionId = req.params.sessionId;
+    const limit = typeof req.query.limit === "string" ? Number(req.query.limit) : 500;
+    const beforeId = typeof req.query.before_id === "string" ? Number(req.query.before_id) : null;
+    const rows = await listDealerMessagesBySession(sessionId, { limit, beforeId });
+    const settings = await getConversationSettings(sessionId);
+    return res.json({ rows, settings });
+  } catch (error) {
+    console.error("GET /dealer/db/conversations/:sessionId/messages failed:", error?.message || error);
+    return res.status(500).json({ error: "Failed to load conversation messages" });
+  }
 });
 
 dealerDbAdminRouter.post("/dealer/db/conversations/:sessionId/read", async (req, res) => {
-  const sessionId = req.params.sessionId;
-  const settings = await markConversationRead(sessionId);
-  return res.json({ ok: true, settings });
+  try {
+    const sessionId = req.params.sessionId;
+    const settings = await markConversationRead(sessionId);
+    return res.json({ ok: true, settings });
+  } catch (error) {
+    console.error("POST /dealer/db/conversations/:sessionId/read failed:", error?.message || error);
+    return res.status(500).json({ error: "Failed to update read status" });
+  }
 });
 
 dealerDbAdminRouter.patch("/dealer/db/conversations/:sessionId/bot", async (req, res) => {
-  const sessionId = req.params.sessionId;
-  const enabled = Boolean(req.body?.enabled);
-  const settings = await setConversationBotEnabled(sessionId, enabled);
-  return res.json({ ok: true, settings });
+  try {
+    const sessionId = req.params.sessionId;
+    const enabled = Boolean(req.body?.enabled);
+    const settings = await setConversationBotEnabled(sessionId, enabled);
+    return res.json({ ok: true, settings });
+  } catch (error) {
+    console.error("PATCH /dealer/db/conversations/:sessionId/bot failed:", error?.message || error);
+    return res.status(500).json({ error: "Failed to update bot mode" });
+  }
 });
 
 dealerDbAdminRouter.post("/dealer/db/conversations/:sessionId/reply", async (req, res) => {

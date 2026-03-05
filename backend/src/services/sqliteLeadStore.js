@@ -856,27 +856,31 @@ export async function persistConversationEvent({
 
 export async function getConversationSettings(sessionId) {
   if (usePgInventory && pgPool) {
-    await pgMessagingReady;
-    const result = await pgPool.query(
-      `
-        SELECT session_id, bot_enabled, last_read_at, updated_at
-        FROM conversation_settings
-        WHERE session_id = $1
-        LIMIT 1
-      `,
-      [sessionId]
-    );
+    try {
+      await pgMessagingReady;
+      const result = await pgPool.query(
+        `
+          SELECT session_id, bot_enabled, last_read_at, updated_at
+          FROM conversation_settings
+          WHERE session_id = $1
+          LIMIT 1
+        `,
+        [sessionId]
+      );
 
-    const row = result.rows?.[0];
-    if (!row) {
-      return {
-        session_id: sessionId,
-        bot_enabled: 1,
-        last_read_at: null,
-        updated_at: null
-      };
+      const row = result.rows?.[0];
+      if (!row) {
+        return {
+          session_id: sessionId,
+          bot_enabled: 1,
+          last_read_at: null,
+          updated_at: null
+        };
+      }
+      return row;
+    } catch (error) {
+      console.error("getConversationSettings Postgres failed, using SQLite fallback:", error?.message || error);
     }
-    return row;
   }
 
   const row = db
@@ -907,19 +911,23 @@ export async function setConversationBotEnabled(sessionId, enabled) {
   const current = await getConversationSettings(sessionId);
 
   if (usePgInventory && pgPool) {
-    await pgMessagingReady;
-    await pgPool.query(
-      `
-        INSERT INTO conversation_settings (session_id, bot_enabled, last_read_at, updated_at)
-        VALUES ($1,$2,$3,$4)
-        ON CONFLICT(session_id) DO UPDATE SET
-          bot_enabled = EXCLUDED.bot_enabled,
-          last_read_at = EXCLUDED.last_read_at,
-          updated_at = EXCLUDED.updated_at
-      `,
-      [sessionId, enabled ? 1 : 0, current.last_read_at ?? null, now]
-    );
-    return getConversationSettings(sessionId);
+    try {
+      await pgMessagingReady;
+      await pgPool.query(
+        `
+          INSERT INTO conversation_settings (session_id, bot_enabled, last_read_at, updated_at)
+          VALUES ($1,$2,$3,$4)
+          ON CONFLICT(session_id) DO UPDATE SET
+            bot_enabled = EXCLUDED.bot_enabled,
+            last_read_at = EXCLUDED.last_read_at,
+            updated_at = EXCLUDED.updated_at
+        `,
+        [sessionId, enabled ? 1 : 0, current.last_read_at ?? null, now]
+      );
+      return getConversationSettings(sessionId);
+    } catch (error) {
+      console.error("setConversationBotEnabled Postgres failed, using SQLite fallback:", error?.message || error);
+    }
   }
 
   upsertConversationSettingsStmt.run(sessionId, enabled ? 1 : 0, current.last_read_at ?? null, now);
@@ -929,18 +937,22 @@ export async function setConversationBotEnabled(sessionId, enabled) {
 export async function markConversationRead(sessionId) {
   const now = new Date().toISOString();
   if (usePgInventory && pgPool) {
-    await pgMessagingReady;
-    await pgPool.query(
-      `
-        INSERT INTO conversation_settings (session_id, bot_enabled, last_read_at, updated_at)
-        VALUES ($1, 1, $2, $3)
-        ON CONFLICT(session_id) DO UPDATE SET
-          last_read_at = EXCLUDED.last_read_at,
-          updated_at = EXCLUDED.updated_at
-      `,
-      [sessionId, now, now]
-    );
-    return getConversationSettings(sessionId);
+    try {
+      await pgMessagingReady;
+      await pgPool.query(
+        `
+          INSERT INTO conversation_settings (session_id, bot_enabled, last_read_at, updated_at)
+          VALUES ($1, 1, $2, $3)
+          ON CONFLICT(session_id) DO UPDATE SET
+            last_read_at = EXCLUDED.last_read_at,
+            updated_at = EXCLUDED.updated_at
+        `,
+        [sessionId, now, now]
+      );
+      return getConversationSettings(sessionId);
+    } catch (error) {
+      console.error("markConversationRead Postgres failed, using SQLite fallback:", error?.message || error);
+    }
   }
 
   markConversationReadStmt.run(sessionId, now, now);
@@ -1032,53 +1044,57 @@ export async function listDealerConversations({ limit = 100, query = "" } = {}) 
   const hasQuery = normalizedQuery.length > 0;
 
   if (usePgInventory && pgPool) {
-    await pgMessagingReady;
-    const result = await pgPool.query(
-      `
-        SELECT
-          m.session_id AS session_id,
-          MAX(m.created_at) AS updated_at,
-          SUM(CASE WHEN m.role = 'user' THEN 1 ELSE 0 END)::int AS user_messages,
-          SUM(CASE WHEN m.role = 'assistant' THEN 1 ELSE 0 END)::int AS assistant_messages,
-          (
-            SELECT m2.content
-            FROM messages m2
-            WHERE m2.session_id = m.session_id
-            ORDER BY m2.created_at DESC, m2.id DESC
-            LIMIT 1
-          ) AS last_message,
-          (
-            SELECT m2.role
-            FROM messages m2
-            WHERE m2.session_id = m.session_id
-            ORDER BY m2.created_at DESC, m2.id DESC
-            LIMIT 1
-          ) AS last_role,
-          COALESCE(s.bot_enabled, 1) AS bot_enabled,
-          s.last_read_at AS last_read_at,
-          COALESCE(l.status, 'NEW') AS lead_status,
-          COALESCE(l.priority, 'NORMAL') AS lead_priority,
-          COALESCE(l.mode, 'BOT') AS lead_mode,
-          l.name AS lead_name,
-          l.phone AS lead_phone,
-          (
-            SELECT COUNT(1)::int
-            FROM messages um
-            WHERE um.session_id = m.session_id
-              AND um.role = 'user'
-              AND (s.last_read_at IS NULL OR um.created_at > s.last_read_at)
-          ) AS unread_count
-        FROM messages m
-        LEFT JOIN conversation_settings s ON s.session_id = m.session_id
-        LEFT JOIN leads l ON l.session_id = m.session_id
-        ${hasQuery ? "WHERE (LOWER(m.session_id) LIKE $1 OR LOWER(COALESCE(l.name,'')) LIKE $1 OR LOWER(COALESCE(l.phone,'')) LIKE $1)" : ""}
-        GROUP BY m.session_id, s.bot_enabled, s.last_read_at, l.status, l.priority, l.mode, l.name, l.phone
-        ORDER BY updated_at DESC
-        LIMIT $${hasQuery ? 2 : 1}
-      `,
-      hasQuery ? [`%${normalizedQuery}%`, safeLimit] : [safeLimit]
-    );
-    return result.rows || [];
+    try {
+      await pgMessagingReady;
+      const result = await pgPool.query(
+        `
+          SELECT
+            m.session_id AS session_id,
+            MAX(m.created_at) AS updated_at,
+            SUM(CASE WHEN m.role = 'user' THEN 1 ELSE 0 END)::int AS user_messages,
+            SUM(CASE WHEN m.role = 'assistant' THEN 1 ELSE 0 END)::int AS assistant_messages,
+            (
+              SELECT m2.content
+              FROM messages m2
+              WHERE m2.session_id = m.session_id
+              ORDER BY m2.created_at DESC, m2.id DESC
+              LIMIT 1
+            ) AS last_message,
+            (
+              SELECT m2.role
+              FROM messages m2
+              WHERE m2.session_id = m.session_id
+              ORDER BY m2.created_at DESC, m2.id DESC
+              LIMIT 1
+            ) AS last_role,
+            COALESCE(s.bot_enabled, 1) AS bot_enabled,
+            s.last_read_at AS last_read_at,
+            COALESCE(l.status, 'NEW') AS lead_status,
+            COALESCE(l.priority, 'NORMAL') AS lead_priority,
+            COALESCE(l.mode, 'BOT') AS lead_mode,
+            l.name AS lead_name,
+            l.phone AS lead_phone,
+            (
+              SELECT COUNT(1)::int
+              FROM messages um
+              WHERE um.session_id = m.session_id
+                AND um.role = 'user'
+                AND (s.last_read_at IS NULL OR um.created_at > s.last_read_at)
+            ) AS unread_count
+          FROM messages m
+          LEFT JOIN conversation_settings s ON s.session_id = m.session_id
+          LEFT JOIN leads l ON l.session_id = m.session_id
+          ${hasQuery ? "WHERE (LOWER(m.session_id) LIKE $1 OR LOWER(COALESCE(l.name,'')) LIKE $1 OR LOWER(COALESCE(l.phone,'')) LIKE $1)" : ""}
+          GROUP BY m.session_id, s.bot_enabled, s.last_read_at, l.status, l.priority, l.mode, l.name, l.phone
+          ORDER BY updated_at DESC
+          LIMIT $${hasQuery ? 2 : 1}
+        `,
+        hasQuery ? [`%${normalizedQuery}%`, safeLimit] : [safeLimit]
+      );
+      return result.rows || [];
+    } catch (error) {
+      console.error("listDealerConversations Postgres failed, using SQLite fallback:", error?.message || error);
+    }
   }
 
   const sql = `
@@ -1273,44 +1289,48 @@ export async function listDealerMessagesBySession(sessionId, { limit = 200, befo
   const safeBeforeId = Number.isFinite(Number(beforeId)) ? Number(beforeId) : null;
 
   if (usePgInventory && pgPool) {
-    await pgMessagingReady;
-    const result = safeBeforeId
-      ? await pgPool.query(
-          `
-            SELECT
-              id,
-              session_id,
-              role,
-              content,
-              intent,
-              source,
-              created_at
-            FROM messages
-            WHERE session_id = $1
-              AND id < $2
-            ORDER BY id DESC
-            LIMIT $3
-          `,
-          [sessionId, safeBeforeId, safeLimit]
-        )
-      : await pgPool.query(
-          `
-            SELECT
-              id,
-              session_id,
-              role,
-              content,
-              intent,
-              source,
-              created_at
-            FROM messages
-            WHERE session_id = $1
-            ORDER BY id DESC
-            LIMIT $2
-          `,
-          [sessionId, safeLimit]
-        );
-    return (result.rows || []).reverse();
+    try {
+      await pgMessagingReady;
+      const result = safeBeforeId
+        ? await pgPool.query(
+            `
+              SELECT
+                id,
+                session_id,
+                role,
+                content,
+                intent,
+                source,
+                created_at
+              FROM messages
+              WHERE session_id = $1
+                AND id < $2
+              ORDER BY id DESC
+              LIMIT $3
+            `,
+            [sessionId, safeBeforeId, safeLimit]
+          )
+        : await pgPool.query(
+            `
+              SELECT
+                id,
+                session_id,
+                role,
+                content,
+                intent,
+                source,
+                created_at
+              FROM messages
+              WHERE session_id = $1
+              ORDER BY id DESC
+              LIMIT $2
+            `,
+            [sessionId, safeLimit]
+          );
+      return (result.rows || []).reverse();
+    } catch (error) {
+      console.error("listDealerMessagesBySession Postgres failed, using SQLite fallback:", error?.message || error);
+    }
   }
 
   const rows = safeBeforeId
@@ -2327,30 +2347,33 @@ export async function getMinAvailablePriceByMake(make) {
 }
 
 export async function listInventory({ status = null } = {}) {
+  const hasStatus = typeof status === "string" && status.trim().length > 0;
   if (usePgInventory && pgPool) {
-    await pgInventoryReady;
-    const hasStatus = typeof status === "string" && status.trim().length > 0;
-    if (hasStatus) {
-      const result = await pgPool.query(
-        `
-          SELECT id, make, model, year, price, mileage, transmission, fuel_type, vehicle_type, color, status, featured, created_at, updated_at
-          FROM inventory
-          WHERE LOWER(status) = LOWER($1)
-          ORDER BY updated_at DESC, id DESC
-        `,
-        [status]
-      );
+    try {
+      await pgInventoryReady;
+      if (hasStatus) {
+        const result = await pgPool.query(
+          `
+            SELECT id, make, model, year, price, mileage, transmission, fuel_type, vehicle_type, color, status, featured, created_at, updated_at
+            FROM inventory
+            WHERE LOWER(status) = LOWER($1)
+            ORDER BY updated_at DESC, id DESC
+          `,
+          [status]
+        );
+        return result.rows || [];
+      }
+      const result = await pgPool.query(`
+        SELECT id, make, model, year, price, mileage, transmission, fuel_type, vehicle_type, color, status, featured, created_at, updated_at
+        FROM inventory
+        ORDER BY updated_at DESC, id DESC
+      `);
       return result.rows || [];
+    } catch (error) {
+      console.error("listInventory Postgres failed, using SQLite fallback:", error?.message || error);
     }
-    const result = await pgPool.query(`
-      SELECT id, make, model, year, price, mileage, transmission, fuel_type, vehicle_type, color, status, featured, created_at, updated_at
-      FROM inventory
-      ORDER BY updated_at DESC, id DESC
-    `);
-    return result.rows || [];
   }
 
-  const hasStatus = typeof status === "string" && status.trim().length > 0;
   const sql = hasStatus
     ? `
       SELECT id, make, model, year, price, mileage, transmission, fuel_type, vehicle_type, color, status, featured, created_at, updated_at

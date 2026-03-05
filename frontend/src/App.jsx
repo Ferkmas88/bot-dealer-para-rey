@@ -35,8 +35,7 @@ const OPENING_PROMO_MESSAGE =
   "Puedo ayudarte a:\n" +
   "• Encontrar el carro que necesitas\n" +
   "• Agendar una cita en el dealer\n" +
-  "• Conectarte directamente con Rey\n" +
-  "• Contactar a nuestro mecánico";
+  "• Comunicarte con Rey y con el mecánico";
 
 const EMPTY_FORM = {
   make: "",
