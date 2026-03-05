@@ -9,13 +9,24 @@ mkdirSync(dirname(sqlitePath), { recursive: true });
 const db = new DatabaseSync(sqlitePath);
 const { Pool } = pg;
 const pgConnectionString = process.env.NEON_DATABASE_URL || process.env.DATABASE_URL || "";
-const usePgInventory = Boolean(pgConnectionString);
+const forceSqlite =
+  String(process.env.FORCE_SQLITE || "")
+    .trim()
+    .toLowerCase() === "1" ||
+  String(process.env.FORCE_SQLITE || "")
+    .trim()
+    .toLowerCase() === "true";
+const usePgInventory = !forceSqlite && Boolean(pgConnectionString);
 const pgPool = usePgInventory
   ? new Pool({
       connectionString: pgConnectionString,
       ssl: { rejectUnauthorized: false }
     })
   : null;
+
+if (forceSqlite) {
+  console.warn("[db] FORCE_SQLITE enabled: skipping Postgres/Neon connection.");
+}
 
 db.exec(`
   PRAGMA journal_mode = WAL;
