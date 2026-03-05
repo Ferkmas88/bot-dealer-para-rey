@@ -2403,16 +2403,20 @@ export async function listInventory({ status = null } = {}) {
 
 export async function getInventoryById(id) {
   if (usePgInventory && pgPool) {
-    await pgInventoryReady;
-    const result = await pgPool.query(
-      `
-      SELECT id, make, model, year, price, mileage, transmission, fuel_type, vehicle_type, color, status, featured, created_at, updated_at
-      FROM inventory
-      WHERE id = $1
-      `,
-      [Number(id)]
-    );
-    return result.rows?.[0] || null;
+    try {
+      await pgInventoryReady;
+      const result = await pgPool.query(
+        `
+        SELECT id, make, model, year, price, mileage, transmission, fuel_type, vehicle_type, color, status, featured, created_at, updated_at
+        FROM inventory
+        WHERE id = $1
+        `,
+        [Number(id)]
+      );
+      return result.rows?.[0] || null;
+    } catch (error) {
+      console.error("getInventoryById Postgres failed, using SQLite fallback:", error?.message || error);
+    }
   }
 
   return (
@@ -2426,33 +2430,37 @@ export async function getInventoryById(id) {
 
 export async function createInventoryUnit(input) {
   if (usePgInventory && pgPool) {
-    await pgInventoryReady;
-    const now = new Date().toISOString();
-    const result = await pgPool.query(
-      `
-      INSERT INTO inventory (
-        make, model, year, price, mileage, transmission, fuel_type, vehicle_type, color, status, featured, created_at, updated_at
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-      RETURNING id, make, model, year, price, mileage, transmission, fuel_type, vehicle_type, color, status, featured, created_at, updated_at
-    `,
-      [
-        String(input.make || "").trim(),
-        String(input.model || "").trim(),
-        Number(input.year),
-        Number(input.price),
-        Number(input.mileage),
-        String(input.transmission || "").trim(),
-        String(input.fuel_type || "").trim(),
-        String(input.vehicle_type || "Sedan").trim(),
-        String(input.color || "").trim(),
-        String(input.status || "available").trim(),
-        Number(input.featured) ? 1 : 0,
-        now,
-        now
-      ]
-    );
-    return result.rows?.[0] || null;
+    try {
+      await pgInventoryReady;
+      const now = new Date().toISOString();
+      const result = await pgPool.query(
+        `
+        INSERT INTO inventory (
+          make, model, year, price, mileage, transmission, fuel_type, vehicle_type, color, status, featured, created_at, updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        RETURNING id, make, model, year, price, mileage, transmission, fuel_type, vehicle_type, color, status, featured, created_at, updated_at
+      `,
+        [
+          String(input.make || "").trim(),
+          String(input.model || "").trim(),
+          Number(input.year),
+          Number(input.price),
+          Number(input.mileage),
+          String(input.transmission || "").trim(),
+          String(input.fuel_type || "").trim(),
+          String(input.vehicle_type || "Sedan").trim(),
+          String(input.color || "").trim(),
+          String(input.status || "available").trim(),
+          Number(input.featured) ? 1 : 0,
+          now,
+          now
+        ]
+      );
+      return result.rows?.[0] || null;
+    } catch (error) {
+      console.error("createInventoryUnit Postgres failed, using SQLite fallback:", error?.message || error);
+    }
   }
 
   const now = new Date().toISOString();
@@ -2505,31 +2513,35 @@ export async function updateInventoryUnit(id, input) {
   };
 
   if (usePgInventory && pgPool) {
-    await pgInventoryReady;
-    const result = await pgPool.query(
-      `
-      UPDATE inventory
-      SET make = $1, model = $2, year = $3, price = $4, mileage = $5, transmission = $6, fuel_type = $7, vehicle_type = $8, color = $9, status = $10, featured = $11, updated_at = $12
-      WHERE id = $13
-      RETURNING id, make, model, year, price, mileage, transmission, fuel_type, vehicle_type, color, status, featured, created_at, updated_at
-      `,
-      [
-        next.make,
-        next.model,
-        Number(next.year),
-        Number(next.price),
-        Number(next.mileage),
-        next.transmission,
-        next.fuel_type,
-        next.vehicle_type || "Sedan",
-        next.color,
-        next.status,
-        Number(next.featured) ? 1 : 0,
-        new Date().toISOString(),
-        Number(id)
-      ]
-    );
-    return result.rows?.[0] || null;
+    try {
+      await pgInventoryReady;
+      const result = await pgPool.query(
+        `
+        UPDATE inventory
+        SET make = $1, model = $2, year = $3, price = $4, mileage = $5, transmission = $6, fuel_type = $7, vehicle_type = $8, color = $9, status = $10, featured = $11, updated_at = $12
+        WHERE id = $13
+        RETURNING id, make, model, year, price, mileage, transmission, fuel_type, vehicle_type, color, status, featured, created_at, updated_at
+        `,
+        [
+          next.make,
+          next.model,
+          Number(next.year),
+          Number(next.price),
+          Number(next.mileage),
+          next.transmission,
+          next.fuel_type,
+          next.vehicle_type || "Sedan",
+          next.color,
+          next.status,
+          Number(next.featured) ? 1 : 0,
+          new Date().toISOString(),
+          Number(id)
+        ]
+      );
+      return result.rows?.[0] || null;
+    } catch (error) {
+      console.error("updateInventoryUnit Postgres failed, using SQLite fallback:", error?.message || error);
+    }
   }
 
   db.prepare(
@@ -2562,9 +2574,13 @@ export async function deleteInventoryUnit(id) {
   if (!existing) return false;
 
   if (usePgInventory && pgPool) {
-    await pgInventoryReady;
-    await pgPool.query("DELETE FROM inventory WHERE id = $1", [Number(id)]);
-    return true;
+    try {
+      await pgInventoryReady;
+      await pgPool.query("DELETE FROM inventory WHERE id = $1", [Number(id)]);
+      return true;
+    } catch (error) {
+      console.error("deleteInventoryUnit Postgres failed, using SQLite fallback:", error?.message || error);
+    }
   }
 
   db.prepare("DELETE FROM inventory WHERE id = ?").run(Number(id));
