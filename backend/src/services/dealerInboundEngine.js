@@ -791,7 +791,7 @@ export async function processInboundDealerMessage({
   await upsertLeadProfile({
     sessionId,
     phone: phone || existingLead?.phone || null,
-    name: inboundProfileName || existingLead?.name || null,
+    name: existingLead?.name || inboundProfileName || null,
     source,
     language: detectLanguage(incomingText),
     intent: null,
