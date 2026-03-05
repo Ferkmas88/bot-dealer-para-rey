@@ -15,7 +15,7 @@ import { runStartupChecks } from "./services/runtimeChecks.js";
 
 const app = express();
 const port = process.env.PORT || 4000;
-const releaseTag = "greeting-guard-2026-03-05-7da66f1";
+const releaseTag = process.env.RELEASE_TAG || "stability-2026-03-05-b8c25f2";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const frontendDistPath = path.resolve(__dirname, "../public");

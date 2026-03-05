@@ -91,8 +91,29 @@ dealerAiRouter.post("/dealer/ai", async (req, res) => {
           source: "inventory-live-db",
           mediaUrl: null
         };
-      } catch {
-        aiResult = await processDealerSessionMessage(message, session.context, learningState);
+      } catch (error) {
+        console.error("inventory-live-db failed:", error?.message || error);
+        aiResult = {
+          reply: "Tuve un problema temporal consultando inventario. Intenta de nuevo en unos segundos o te ayudo a agendar cita.",
+          intent: "buying_interest",
+          entities: {
+            model: null,
+            budget: null,
+            date: null,
+            contact: { email: null, phone: null }
+          },
+          suggestions: [
+            "Quieres que te pase opciones por tipo (sedan/SUV/pickup)?",
+            "Te agendo cita para ver unidades en persona?"
+          ],
+          skill: {
+            stage: "discover",
+            nextObjective: "Recuperar consulta de inventario",
+            confidence: 0.7
+          },
+          source: "inventory-live-db-fallback",
+          mediaUrl: null
+        };
       }
     } else {
       aiResult = await processDealerSessionMessageWithLLM(message, session.context, learningState);
