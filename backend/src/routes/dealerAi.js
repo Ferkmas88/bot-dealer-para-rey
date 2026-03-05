@@ -185,6 +185,13 @@ function parseRequestedSchedule(message = "") {
   return target.toISOString();
 }
 
+function looksLikeScheduleOnlyMessage(message = "") {
+  const raw = String(message || "");
+  if (!raw.trim()) return false;
+  const hasTimeOrDay = /(am|pm|mañana|manana|hoy|tomorrow|pasado mañana|pasado manana|\d{4}-\d{2}-\d{2}|\d{1,2}:\d{2})/i.test(raw);
+  return hasTimeOrDay && Boolean(parseRequestedSchedule(raw));
+}
+
 dealerAiRouter.post("/dealer/ai", async (req, res) => {
   try {
     const parsed = payloadSchema.safeParse(req.body);
@@ -230,7 +237,7 @@ dealerAiRouter.post("/dealer/ai", async (req, res) => {
           mediaUrl: null
         };
       }
-    } else if (asksCreateAppointment(message)) {
+    } else if (asksCreateAppointment(message) || looksLikeScheduleOnlyMessage(message)) {
       const scheduledAt = parseRequestedSchedule(message);
       if (!scheduledAt) {
         aiResult = {
