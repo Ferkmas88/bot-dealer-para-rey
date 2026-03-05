@@ -5,7 +5,6 @@ import {
   createAppointment,
   getConversationSettings,
   getLeadBySessionId,
-  hasWelcomeMessageSent,
   isAppointmentSlotAvailable,
   getLatestOpenAppointmentForLead,
   persistIncomingUserMessage,
@@ -19,12 +18,19 @@ import { sendAppointmentConfirmedOwnerEmail, sendHotLeadHandoffOwnerEmail } from
 export const metaWebhookRouter = express.Router();
 const FIRST_CONTACT_MESSAGE =
   "Hola 👋\n" +
-  "Soy el asistente automático de Empire Rey Auto Sales. Estoy disponible 24/7 para ayudarte.\n\n" +
-  "Puedo ayudarte a:\n" +
-  "• Encontrar el carro que necesitas\n" +
-  "• Agendar una cita en el dealer\n" +
-  "• Conectarte directamente con Rey\n" +
-  "• Contactar a nuestro mecánico";
+  "Soy el asistente virtual de Empire Rey Auto Sales.\n\n" +
+  "🚨 ¡QUE HUBO MI GENTE LINDA DE KENTUCKY! 🚨\n" +
+  "🚗 ¿Acabas de llegar al pais? ¡Ya puedes tener tu carro!\n" +
+  "📞 Llamanos hoy mismo:\n" +
+  "Reyder Quevedo\n" +
+  "502 576 8116\n" +
+  "502 780 1096\n" +
+  "3510 Dixie Hwy 40216\n\n" +
+  "💥 TODAS LAS APLICACIONES SON APROBADAS 💥\n" +
+  "✅ ¿No tienes buen credito? ¡APROBADO!\n" +
+  "✅ ¿Solo tienes tu ID? ¡APROBADO!\n" +
+  "✅ ¿Madre soltera? ¡Tenemos planes especiales para ti desde $85/semana!\n" +
+  "✅ ¿Tienes un carro viejo? ¡Lo recibimos como parte de pago!";
 const DEALER_ADDRESS_TEXT = "3510 Dixie Hwy, Louisville, KY 40216";
 const MECHANIC_CONTACT_REPLY = "Sobre el mecanico: pronto estara disponible su contacto.";
 const inboundMessageCache = new Map();
@@ -603,10 +609,7 @@ metaWebhookRouter.post("/whatsapp", async (req, res) => {
       });
 
       if (isGreetingOnlyMessage(msg.body)) {
-        const welcomeAlreadySent = await hasWelcomeMessageSent(sessionId);
-        const greetingReply = welcomeAlreadySent
-          ? "Hola. Dime que buscas (SUV, sedan o pickup) y tu down payment, y te ayudo ahora mismo."
-          : FIRST_CONTACT_MESSAGE;
+        const greetingReply = FIRST_CONTACT_MESSAGE;
         await persistIncomingUserMessage({
           sessionId,
           userMessage: msg.body,

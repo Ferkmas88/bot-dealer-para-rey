@@ -90,14 +90,19 @@ const DAY_INDEX_TO_SPANISH = ["domingo", "lunes", "martes", "miercoles", "jueves
 
 const OPENING_PROMO_MESSAGE =
   "Hola 👋\n" +
-  "Soy el asistente virtual de Empire Rey Auto Sales. Estoy disponible 24/7 para ayudarte.\n\n" +
-  "Puedo ayudarte a:\n" +
-  "• Encontrar el carro que necesitas\n" +
-  "• Agendar una cita en el dealer\n" +
-  "• Conectarte directamente con Rey\n" +
-  "• Contactar a nuestro mecánico";
-
-const FIRST_TOUCH_INTRO = "Hola 👋\nSoy el asistente virtual de Empire Rey Auto Sales.";
+  "Soy el asistente virtual de Empire Rey Auto Sales.\n\n" +
+  "🚨 ¡QUE HUBO MI GENTE LINDA DE KENTUCKY! 🚨\n" +
+  "🚗 ¿Acabas de llegar al pais? ¡Ya puedes tener tu carro!\n" +
+  "📞 Llamanos hoy mismo:\n" +
+  "Reyder Quevedo\n" +
+  "502 576 8116\n" +
+  "502 780 1096\n" +
+  "3510 Dixie Hwy 40216\n\n" +
+  "💥 TODAS LAS APLICACIONES SON APROBADAS 💥\n" +
+  "✅ ¿No tienes buen credito? ¡APROBADO!\n" +
+  "✅ ¿Solo tienes tu ID? ¡APROBADO!\n" +
+  "✅ ¿Madre soltera? ¡Tenemos planes especiales para ti desde $85/semana!\n" +
+  "✅ ¿Tienes un carro viejo? ¡Lo recibimos como parte de pago!";
 
 const REY_CONTACT_REPLY = "Perfecto, te conecto con Rey para ayudarte directamente.\n+1 (502) 576-8116";
 const MECHANIC_CONTACT_REPLY = "Si, tambien ofrecemos servicio mecanico. Que reparacion o servicio necesitas?";
@@ -213,10 +218,7 @@ export function applyFirstTouchPolicy({ message, context = {}, aiResult }) {
   if (isGenericGreetingMessage(message)) {
     aiResult.reply = OPENING_PROMO_MESSAGE;
   } else {
-    const alreadyIntroduced = /(asistente\s+(virtual|autom[aá]tico))/i.test(String(aiResult.reply || ""));
-    if (!alreadyIntroduced) {
-      aiResult.reply = `${FIRST_TOUCH_INTRO}\n\n${aiResult.reply}`;
-    }
+    aiResult.reply = `${OPENING_PROMO_MESSAGE}\n\n${aiResult.reply}`;
   }
 
   aiResult.updatedContext = { ...baseUpdatedContext, assistantIntroSent: true };
@@ -350,16 +352,21 @@ function asksForCheapCar(text) {
   );
 }
 
+function asksHowToApply(text) {
+  return /(como aplico|como puedo|como le hago|que hago para aplicar|how can i apply|how do i apply)/i.test(text || "");
+}
+
 function buildCheapCarFastpath(context, extracted) {
   const intent = "buying_interest";
   const reply =
-    "Soy el bot asistente de Empire Rey y si, te ayudo a encontrar un carro barato.\n" +
+    "Soy el asistente virtual de Empire Rey y si, te ayudo a encontrar un carro barato.\n" +
     "Podemos ayudarte con:\n" +
-    "- Opciones economicas disponibles en inventario\n" +
+    "- Opciones economicas (incluyendo opciones por debajo de $6,000 cuando haya disponibilidad)\n" +
     "- Pagos semanales segun unidad y perfil\n" +
-    "- Aprobacion con ITIN, ID o credito bajo\n" +
+    "- No necesitas ITIN para empezar el proceso; tambien trabajamos con ID o credito bajo\n" +
     "- Agendar cita para que salgas manejando hoy\n\n" +
-    "Que buscas: sedan, SUV o pickup? Y cuanto puedes dar de down payment?";
+    "Que buscas: sedan, SUV o pickup? Y cuanto puedes dar de down payment?\n\n" +
+    "Si quieres hablar directo, llama a Rey al 502 576 8116 o 502 780 1096.";
 
   const updatedContext = mergeContext(context, extracted, intent);
   const entities = buildEntitySnapshot(extracted, updatedContext);
@@ -411,6 +418,10 @@ function buildBusinessFaqFastpath(message, context, extracted) {
   } else if (asksForTradeIn(safeMessage)) {
     reply = "Si, recibimos tu auto usado como parte de pago. Que ano, marca y millaje tiene?";
     skill = { stage: "faq_trade_in", nextObjective: "Capturar datos del trade-in", confidence: 0.99 };
+  } else if (asksHowToApply(safeMessage)) {
+    reply = "Para aplicar rapido, llama a Rey al 502 576 8116 o 502 780 1096 y te guia directo.";
+    skill = { stage: "faq_apply", nextObjective: "Conectar llamada con asesor", confidence: 0.99 };
+    suggestions = ["Confirmar si desea llamada o visita hoy."];
   } else if (asksForMechanicContact(safeMessage)) {
     reply = MECHANIC_CONTACT_REPLY;
     source = "service-fastpath";
