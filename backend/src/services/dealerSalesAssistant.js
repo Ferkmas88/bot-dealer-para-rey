@@ -101,8 +101,10 @@ const OPENING_PROMO_MESSAGE =
   "• Comunicarte con Rey y con el mecánico";
 const INTRO_RESET_HOURS = 24;
 
-const REY_CONTACT_REPLY = "Perfecto, te conecto con Rey para ayudarte directamente.\n+1 (502) 576-8116";
-const MECHANIC_CONTACT_REPLY = "Si, tambien ofrecemos servicio mecanico. Que reparacion o servicio necesitas?";
+const REY_CONTACT_REPLY =
+  "Perfecto, te conecto con Rey para ayudarte directamente.\n" + "+1 (502) 576-8116 / +1 (502) 780-1096";
+const MECHANIC_CONTACT_REPLY =
+  "Si, tambien ofrecemos servicio mecanico.\n" + "Puedes comunicarte al +1 (502) 576-8116 / +1 (502) 780-1096.";
 const DEALER_ADDRESS_REPLY = "Estamos en 3510 Dixie Hwy, Louisville, Kentucky, USA.";
 const DEALER_PHONES_REPLY = "Puedes llamarnos al (502) 576-8116 o (502) 780-1096.";
 
@@ -372,6 +374,15 @@ function asksForCheapCar(text) {
   return /(carro barato|auto barato|coche barato|carro economico|carro económico|auto economico|auto económico|opciones baratas|algo barato|mas barato|m[aá]s barato|barato)\b/i.test(
     text || ""
   );
+}
+
+function extractExplicitBudgetCapFromText(text) {
+  const raw = String(text || "").toLowerCase();
+  const match = raw.match(/(?:menos de|por debajo de|under|below)\s*\$?\s*(\d{3,6})/i);
+  if (!match) return null;
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  return amount;
 }
 
 function asksHowToApply(text) {
@@ -949,6 +960,10 @@ async function applyInventoryExperience(message, entities, baseReply, updatedCon
   const pickup = isPickupIntent(message) || isPickupIntent(entities.model || "");
   const bodyPreference = detectBodyPreference(message) || detectBodyPreference(entities.model || "");
   const budgetMax = entities.budget ?? updatedContext.budget ?? null;
+  const explicitBudgetCap = extractExplicitBudgetCapFromText(message);
+  const wantsCheap = asksForCheapCar(message);
+  const strictBudgetCap = explicitBudgetCap ?? (wantsCheap ? 6000 : null);
+  const searchBudgetMax = strictBudgetCap ?? budgetMax ?? null;
   const color = updatedContext.color ?? null;
   const requestedColor = requestedColorLabel(message);
   const shouldSearchInventory =
@@ -990,7 +1005,7 @@ async function applyInventoryExperience(message, entities, baseReply, updatedCon
 
   let exactMatches = await searchAvailableInventory({
     make: brand,
-    budgetMax: entities.budget ?? null,
+    budgetMax: searchBudgetMax,
     color,
     pickup,
     limit: 2
@@ -1015,7 +1030,7 @@ async function applyInventoryExperience(message, entities, baseReply, updatedCon
   }
 
   if (brand || entities.budget != null || pickup || asksInventory || hasInventorySignal(message) || isAutoDomainMessage(message)) {
-    let similar = await searchSimilarAvailableInventory({ budgetMax: entities.budget ?? null, color, pickup, limit: 4 });
+    let similar = await searchSimilarAvailableInventory({ budgetMax: searchBudgetMax, color, pickup, limit: 4 });
     similar = filterUnitsByBody(similar, bodyPreference).slice(0, 2);
     if (similar.length) {
       const lines = similar.map((item) => `- ${formatInventoryUnit(item)}`).join("\n");
@@ -1024,6 +1039,13 @@ async function applyInventoryExperience(message, entities, baseReply, updatedCon
           `No tengo match exacto ahora, pero si alternativas similares disponibles:\n${lines}\nSi quieres, te agendo cita para tu visita.`,
           `No tengo esa exacta, pero estas se parecen mucho y estan disponibles:\n${lines}\nSi quieres, te agendo cita para venir a verlas.`
         ]),
+        mediaUrl: null
+      };
+    }
+
+    if (strictBudgetCap != null) {
+      return {
+        reply: `Ahora mismo no tengo unidades disponibles por debajo de $${Number(strictBudgetCap).toLocaleString("en-US")}. Si quieres, te aviso cuando entre una en ese rango.`,
         mediaUrl: null
       };
     }
