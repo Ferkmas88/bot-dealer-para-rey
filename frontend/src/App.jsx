@@ -1667,18 +1667,14 @@ export default function App() {
                     <thead>
                       <tr>
                         <th>ID</th>
-                        <th>Ano</th>
                         <th>Marca</th>
                         <th>Modelo</th>
-                        <th>Tipo</th>
+                        <th>Ano</th>
                         <th>Precio</th>
                         <th>Millaje</th>
+                        <th>Tipo</th>
                         <th>Color</th>
-                        <th>Transmision</th>
-                        <th>Combustible</th>
                         <th>Status</th>
-                        <th>Destacado</th>
-                        <th>Actualizado</th>
                         <th>Acciones</th>
                       </tr>
                     </thead>
@@ -1686,18 +1682,14 @@ export default function App() {
                       {inventoryRows.map((row) => (
                         <tr key={row.id}>
                           <td>{row.id}</td>
-                          <td>{row.year || "-"}</td>
                           <td>{row.make || "-"}</td>
                           <td>{row.model || "-"}</td>
-                          <td>{row.vehicle_type || "Sedan"}</td>
+                          <td>{row.year || "-"}</td>
                           <td>${Number(row.price || 0).toLocaleString("en-US")}</td>
                           <td>{Number(row.mileage || 0).toLocaleString("en-US")} mi</td>
+                          <td>{row.vehicle_type || "Sedan"}</td>
                           <td>{row.color || "-"}</td>
-                          <td>{row.transmission || "-"}</td>
-                          <td>{row.fuel_type || "-"}</td>
                           <td>{row.status}</td>
-                          <td>{Number(row.featured) ? "Si" : "No"}</td>
-                          <td>{formatTimestamp(row.updated_at)}</td>
                           <td className="row-actions">
                             <button type="button" className="secondary-btn" onClick={() => fillFormFromRow(row)}>
                               Editar
