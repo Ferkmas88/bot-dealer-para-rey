@@ -368,6 +368,9 @@ export default function App() {
   const [inventoryError, setInventoryError] = useState("");
   const [inventoryForm, setInventoryForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState(null);
+  const [inventorySearch, setInventorySearch] = useState("");
+  const [inventoryTypeFilter, setInventoryTypeFilter] = useState("all");
+  const [inventoryStatusFilter, setInventoryStatusFilter] = useState("all");
 
   const [appointmentsRows, setAppointmentsRows] = useState([]);
   const [upcomingAppointmentsRows, setUpcomingAppointmentsRows] = useState([]);
@@ -447,6 +450,19 @@ export default function App() {
     const sold = inventoryRows.filter((row) => row.status === "sold").length;
     return { total, available, reserved, sold };
   }, [inventoryRows]);
+
+  const filteredInventoryRows = useMemo(() => {
+    const term = String(inventorySearch || "").trim().toLowerCase();
+    return inventoryRows.filter((row) => {
+      const bySearch =
+        !term ||
+        String(row.make || "").toLowerCase().includes(term) ||
+        String(row.model || "").toLowerCase().includes(term);
+      const byType = inventoryTypeFilter === "all" || String(row.vehicle_type || "").toLowerCase() === inventoryTypeFilter;
+      const byStatus = inventoryStatusFilter === "all" || String(row.status || "").toLowerCase() === inventoryStatusFilter;
+      return bySearch && byType && byStatus;
+    });
+  }, [inventoryRows, inventorySearch, inventoryTypeFilter, inventoryStatusFilter]);
 
   const selectedThread = useMemo(
     () => conversationRows.find((row) => row.session_id === selectedSessionId) || null,
@@ -1633,35 +1649,68 @@ export default function App() {
 
               <article className="panel crm-form-panel">
                 <div className="panel-head">
-                  <h2>{editingId ? "Editar unidad" : "Registrar unidad"}</h2>
-                  <button type="button" className="secondary-btn" onClick={resetInventoryForm}>
-                    {editingId ? "Cancelar edicion" : "Limpiar"}
+                  <h2>{editingId ? "Editar unidad" : "Registrar vehiculo"}</h2>
+                  <button type="button" className="secondary-btn inventory-clear-btn" onClick={resetInventoryForm}>
+                    {editingId ? "Cancelar edicion" : "Limpiar formulario"}
                   </button>
                 </div>
                 {inventoryError ? <p className="error-text">{inventoryError}</p> : null}
                 <form className="inventory-form" onSubmit={saveInventoryUnit}>
-                  <input placeholder="Marca" value={inventoryForm.make} onChange={(e) => setInventoryForm((prev) => ({ ...prev, make: e.target.value }))} required />
-                  <input placeholder="Modelo" value={inventoryForm.model} onChange={(e) => setInventoryForm((prev) => ({ ...prev, model: e.target.value }))} required />
-                  <input type="number" placeholder="Ano" value={inventoryForm.year} onChange={(e) => setInventoryForm((prev) => ({ ...prev, year: e.target.value }))} required />
-                  <input type="number" step="0.01" placeholder="Precio" value={inventoryForm.price} onChange={(e) => setInventoryForm((prev) => ({ ...prev, price: e.target.value }))} required />
-                  <input type="number" placeholder="Millaje" value={inventoryForm.mileage} onChange={(e) => setInventoryForm((prev) => ({ ...prev, mileage: e.target.value }))} required />
-                  <select value={inventoryForm.vehicle_type} onChange={(e) => setInventoryForm((prev) => ({ ...prev, vehicle_type: e.target.value }))} required>
-                    <option value="Sedan">Sedan</option>
-                    <option value="SUV">SUV</option>
-                    <option value="Pickup">Pickup</option>
-                  </select>
-                  <input placeholder="Color" value={inventoryForm.color} onChange={(e) => setInventoryForm((prev) => ({ ...prev, color: e.target.value }))} required />
-                  <select value={inventoryForm.status} onChange={(e) => setInventoryForm((prev) => ({ ...prev, status: e.target.value }))}>
-                    <option value="available">Disponible</option>
-                    <option value="reserved">Reservado</option>
-                    <option value="sold">Vendido</option>
-                  </select>
-                  <button type="submit">{editingId ? "Actualizar unidad" : "Crear unidad"}</button>
+                  <div className="inventory-form-row">
+                    <input placeholder="Marca" value={inventoryForm.make} onChange={(e) => setInventoryForm((prev) => ({ ...prev, make: e.target.value }))} required />
+                    <input placeholder="Modelo" value={inventoryForm.model} onChange={(e) => setInventoryForm((prev) => ({ ...prev, model: e.target.value }))} required />
+                    <input type="number" placeholder="Año" value={inventoryForm.year} onChange={(e) => setInventoryForm((prev) => ({ ...prev, year: e.target.value }))} required />
+                    <input type="number" step="0.01" placeholder="Precio ($)" value={inventoryForm.price} onChange={(e) => setInventoryForm((prev) => ({ ...prev, price: e.target.value }))} required />
+                    <input type="number" placeholder="Millaje (mi)" value={inventoryForm.mileage} onChange={(e) => setInventoryForm((prev) => ({ ...prev, mileage: e.target.value }))} required />
+                  </div>
+                  <div className="inventory-form-row">
+                    <select value={inventoryForm.vehicle_type} onChange={(e) => setInventoryForm((prev) => ({ ...prev, vehicle_type: e.target.value }))} required>
+                      <option value="Sedan">Tipo de vehiculo: Sedan</option>
+                      <option value="SUV">Tipo de vehiculo: SUV</option>
+                      <option value="Pickup">Tipo de vehiculo: Pickup</option>
+                    </select>
+                    <input placeholder="Color" value={inventoryForm.color} onChange={(e) => setInventoryForm((prev) => ({ ...prev, color: e.target.value }))} required />
+                    <select value={inventoryForm.status} onChange={(e) => setInventoryForm((prev) => ({ ...prev, status: e.target.value }))}>
+                      <option value="available">Estado: Disponible</option>
+                      <option value="reserved">Estado: Reservado</option>
+                      <option value="sold">Estado: Vendido</option>
+                    </select>
+                    <button type="submit" className="inventory-submit-btn">{editingId ? "Guardar cambios" : "+ Crear unidad"}</button>
+                  </div>
                 </form>
               </article>
 
               <article className="panel crm-table-panel">
-                <h2>Inventario comercial</h2>
+                <div className="panel-head inventory-head">
+                  <div>
+                    <h2>Inventario comercial</h2>
+                    <p className="subtle inventory-count">
+                      {filteredInventoryRows.length} vehiculos mostrados de {inventoryRows.length} registrados
+                    </p>
+                  </div>
+                </div>
+                <div className="inventory-toolbar">
+                  <input
+                    className="inventory-search"
+                    placeholder="Buscar por marca o modelo..."
+                    value={inventorySearch}
+                    onChange={(e) => setInventorySearch(e.target.value)}
+                  />
+                  <div className="inventory-filters">
+                    <span className="subtle">Tipo:</span>
+                    <button type="button" className={inventoryTypeFilter === "all" ? "active-btn" : "secondary-btn"} onClick={() => setInventoryTypeFilter("all")}>Todos</button>
+                    <button type="button" className={inventoryTypeFilter === "sedan" ? "active-btn" : "secondary-btn"} onClick={() => setInventoryTypeFilter("sedan")}>Sedan</button>
+                    <button type="button" className={inventoryTypeFilter === "suv" ? "active-btn" : "secondary-btn"} onClick={() => setInventoryTypeFilter("suv")}>SUV</button>
+                    <button type="button" className={inventoryTypeFilter === "pickup" ? "active-btn" : "secondary-btn"} onClick={() => setInventoryTypeFilter("pickup")}>Pickup</button>
+                  </div>
+                  <div className="inventory-filters">
+                    <span className="subtle">Estado:</span>
+                    <button type="button" className={inventoryStatusFilter === "all" ? "active-btn" : "secondary-btn"} onClick={() => setInventoryStatusFilter("all")}>Todos</button>
+                    <button type="button" className={inventoryStatusFilter === "available" ? "active-btn" : "secondary-btn"} onClick={() => setInventoryStatusFilter("available")}>Disponible</button>
+                    <button type="button" className={inventoryStatusFilter === "reserved" ? "active-btn" : "secondary-btn"} onClick={() => setInventoryStatusFilter("reserved")}>Reservado</button>
+                    <button type="button" className={inventoryStatusFilter === "sold" ? "active-btn" : "secondary-btn"} onClick={() => setInventoryStatusFilter("sold")}>Vendido</button>
+                  </div>
+                </div>
                 <div className="inventory-table-wrap">
                   <table className="inventory-table">
                     <thead>
@@ -1669,17 +1718,17 @@ export default function App() {
                         <th>ID</th>
                         <th>Marca</th>
                         <th>Modelo</th>
-                        <th>Ano</th>
-                        <th>Precio</th>
-                        <th>Millaje</th>
-                        <th>Tipo</th>
+                        <th>Año</th>
+                        <th>Precio ($)</th>
+                        <th>Millaje (mi)</th>
+                        <th>Tipo de vehiculo</th>
                         <th>Color</th>
-                        <th>Status</th>
+                        <th>Estado</th>
                         <th>Acciones</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {inventoryRows.map((row) => (
+                      {filteredInventoryRows.map((row) => (
                         <tr key={row.id}>
                           <td>{row.id}</td>
                           <td>{row.make || "-"}</td>
@@ -1689,7 +1738,7 @@ export default function App() {
                           <td>{Number(row.mileage || 0).toLocaleString("en-US")} mi</td>
                           <td>{row.vehicle_type || "Sedan"}</td>
                           <td>{row.color || "-"}</td>
-                          <td>{row.status}</td>
+                          <td>{row.status === "available" ? "Disponible" : row.status === "reserved" ? "Reservado" : row.status === "sold" ? "Vendido" : row.status}</td>
                           <td className="row-actions">
                             <button type="button" className="secondary-btn" onClick={() => fillFormFromRow(row)}>
                               Editar
@@ -1700,6 +1749,13 @@ export default function App() {
                           </td>
                         </tr>
                       ))}
+                      {filteredInventoryRows.length === 0 ? (
+                        <tr>
+                          <td colSpan={10} className="subtle">
+                            No hay vehiculos para este filtro.
+                          </td>
+                        </tr>
+                      ) : null}
                     </tbody>
                   </table>
                 </div>

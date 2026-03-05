@@ -183,8 +183,56 @@ h2 {
 
 .inventory-form {
   display: grid;
+  gap: 8px;
+}
+
+.inventory-form-row {
+  display: grid;
   grid-template-columns: repeat(5, minmax(110px, 1fr));
   gap: 8px;
+}
+
+.inventory-submit-btn {
+  min-height: 42px;
+  font-size: 15px;
+}
+
+.inventory-clear-btn {
+  padding: 7px 10px;
+  font-size: 12px;
+}
+
+.inventory-head {
+  margin-bottom: 8px;
+}
+
+.inventory-count {
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+
+.inventory-toolbar {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.inventory-search {
+  width: 100%;
+}
+
+.inventory-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.inventory-filters .secondary-btn,
+.inventory-filters .active-btn {
+  padding: 7px 10px;
+  font-size: 13px;
 }
 
 .crm-table-panel h2 {
@@ -652,7 +700,7 @@ button:disabled {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .inventory-form {
+  .inventory-form-row {
     grid-template-columns: repeat(2, minmax(110px, 1fr));
   }
 
@@ -691,7 +739,7 @@ button:disabled {
 
   .auth-form,
   .composer,
-  .inventory-form,
+  .inventory-form-row,
   .appointment-create-form,
   .manual-reply {
     grid-template-columns: 1fr;
