@@ -29,6 +29,7 @@ const INBOX_MESSAGES_CACHE_MAX_THREADS = 40;
 const INBOX_BADGE_POLL_MS = 7000;
 const INBOX_LIST_POLL_MS = 5000;
 const INBOX_MESSAGES_POLL_MS = 3500;
+const PUSH_PERSIST_ENABLED_KEY = "dealer-push-enabled-v1";
 const OPENING_PROMO_MESSAGE =
   "Hola 👋\n" +
   "Soy el asistente automático de Empire Rey Auto Sales. Estoy disponible 24/7 para ayudarte.\n\n" +
@@ -225,6 +226,26 @@ function saveMessagesCacheIndex(index) {
   }
 }
 
+function loadPersistedPushEnabled() {
+  try {
+    return localStorage.getItem(PUSH_PERSIST_ENABLED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function savePersistedPushEnabled(value) {
+  try {
+    if (value) {
+      localStorage.setItem(PUSH_PERSIST_ENABLED_KEY, "1");
+    } else {
+      localStorage.removeItem(PUSH_PERSIST_ENABLED_KEY);
+    }
+  } catch {
+    // noop
+  }
+}
+
 function loadMessagesCacheForSession(sessionId) {
   if (!sessionId) return null;
   try {
@@ -347,6 +368,7 @@ export default function App() {
   const [adminView, setAdminView] = useState(resolveAdminTabFromPathname);
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushStatus, setPushStatus] = useState("");
+  const [pushPersistEnabled, setPushPersistEnabled] = useState(loadPersistedPushEnabled);
   const [notificationPermission, setNotificationPermission] = useState(() => {
     if (typeof window === "undefined" || !("Notification" in window)) return "unsupported";
     return Notification.permission;
@@ -769,27 +791,44 @@ export default function App() {
     if (!pushSupported) return;
     const registration = await navigator.serviceWorker.ready;
     const existing = await registration.pushManager.getSubscription();
-    setPushEnabled(Boolean(existing));
+    if (!existing) {
+      setPushEnabled(false);
+      return;
+    }
+    await fetch(PUSH_SUBSCRIBE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(existing)
+    });
+    setPushEnabled(true);
+    setPushPersistEnabled(true);
+    savePersistedPushEnabled(true);
   }
 
-  async function enableNotifications() {
+  async function enableNotifications(options = {}) {
+    const { silent = false } = options;
     if (!pushSupported) {
       setNotificationPermission("unsupported");
-      setPushStatus("Este navegador no soporta notificaciones push.");
+      if (!silent) setPushStatus("Este navegador no soporta notificaciones push.");
       return;
     }
 
     try {
-      const permission = await Notification.requestPermission();
+      const currentPermission = Notification.permission;
+      let permission = currentPermission;
+      if (currentPermission === "default") {
+        if (silent) return;
+        permission = await Notification.requestPermission();
+      }
       setNotificationPermission(permission);
       if (permission !== "granted") {
-        setPushStatus("Permiso de notificaciones denegado.");
+        if (!silent) setPushStatus("Permiso de notificaciones denegado.");
         return;
       }
 
       const config = await getPushConfig();
       if (!config.enabled || !config.publicKey) {
-        setPushStatus("Push no configurado en servidor (falta VAPID).");
+        if (!silent) setPushStatus("Push no configurado en servidor (falta VAPID).");
         return;
       }
 
@@ -810,10 +849,14 @@ export default function App() {
       });
 
       setPushEnabled(true);
-      setPushStatus("Notificaciones activadas.");
+      setPushPersistEnabled(true);
+      savePersistedPushEnabled(true);
+      if (!silent) setPushStatus("Notificaciones activadas.");
     } catch {
-      setNotificationPermission("denied");
-      setPushStatus("No se pudieron activar notificaciones.");
+      if (!silent) {
+        setNotificationPermission("denied");
+        setPushStatus("No se pudieron activar notificaciones.");
+      }
     }
   }
 
@@ -831,11 +874,20 @@ export default function App() {
         await subscription.unsubscribe();
       }
       setPushEnabled(false);
+      setPushPersistEnabled(false);
+      savePersistedPushEnabled(false);
       setPushStatus("Notificaciones desactivadas.");
     } catch {
       setPushStatus("No se pudo desactivar notificaciones.");
     }
   }
+
+  useEffect(() => {
+    if (!isAuthenticated || !pushSupported) return;
+    if (!pushPersistEnabled) return;
+    if (notificationPermission !== "granted") return;
+    enableNotifications({ silent: true }).catch(() => {});
+  }, [isAuthenticated, pushSupported, pushPersistEnabled, notificationPermission]);
 
   async function sendMessage(text) {
     if (!text || loading) return;
