@@ -202,6 +202,13 @@ function isGenericGreetingMessage(text) {
   );
 }
 
+function buildGreetingFastpathReply(context = {}) {
+  if (context?.assistantIntroSent) {
+    return "Perfecto ✅ Te ayudo ahora. Buscas Sedan, SUV o Pickup?";
+  }
+  return OPENING_PROMO_MESSAGE;
+}
+
 export function applyFirstTouchPolicy({ message, context = {}, aiResult }) {
   if (!aiResult || typeof aiResult !== "object") return aiResult;
 
@@ -1580,7 +1587,7 @@ export async function processDealerSessionMessageWithLLM(message, context = {}, 
 
   // Fast path for simple greetings to reduce latency and avoid repetitive inventory replies.
   if (isGreetingOnly(safeMessage)) {
-    const quickReply = OPENING_PROMO_MESSAGE;
+    const quickReply = buildGreetingFastpathReply(context);
     const intent = "question";
     const updatedContext = mergeContext(context, extracted, intent);
     const entities = buildEntitySnapshot(extracted, updatedContext);
