@@ -1715,7 +1715,7 @@ export default function App() {
                   <table className="inventory-table">
                     <thead>
                       <tr>
-                        <th>ID</th>
+                        <th>#</th>
                         <th>Marca</th>
                         <th>Modelo</th>
                         <th>Año</th>
@@ -1728,9 +1728,9 @@ export default function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredInventoryRows.map((row) => (
+                      {filteredInventoryRows.map((row, index) => (
                         <tr key={row.id}>
-                          <td>{row.id}</td>
+                          <td>{index + 1}</td>
                           <td>{row.make || "-"}</td>
                           <td>{row.model || "-"}</td>
                           <td>{row.year || "-"}</td>

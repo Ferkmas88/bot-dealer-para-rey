@@ -50,6 +50,77 @@ function buildLiveInventorySummaryReply(rows = []) {
   return `Tengo ${available.length} unidades disponibles: ${byMake}. Buscas sedan, pickup o SUV?`;
 }
 
+function normalizeText(value = "") {
+  return String(value || "").trim().toLowerCase();
+}
+
+function formatUnitLine(row) {
+  return `${row.year} ${row.make} ${row.model} - $${Number(row.price || 0).toLocaleString("en-US")} - ${Number(row.mileage || 0).toLocaleString("en-US")} mi`;
+}
+
+function buildInventoryReplyForMessage(message, rows = []) {
+  const text = normalizeText(message);
+  const available = rows.filter((row) => normalizeText(row.status) === "available");
+  const reserved = rows.filter((row) => normalizeText(row.status) === "reserved");
+  const sold = rows.filter((row) => normalizeText(row.status) === "sold");
+
+  const asksCheapest = /(mas barato|m[aá]s barato|precio mas bajo|precio minimo|precio m[ií]nimo)/i.test(text);
+  const asksPriceMileageList = /(precio y millaje|precio y millas|con precio|con millaje|dame opciones|mostrar opciones)/i.test(text);
+  const asksSuv = /\bsuvs?\b|camioneta/i.test(text);
+  const asksPickup = /pickup|pick[\s-]*up|truck/i.test(text);
+  const asksSedan = /\bsedan(es)?\b/i.test(text);
+
+  const matchingByName = rows.filter((row) => {
+    const make = normalizeText(row.make);
+    const model = normalizeText(row.model);
+    return (
+      (make && text.includes(make)) ||
+      (model && text.includes(model)) ||
+      (make && model && text.includes(`${make} ${model}`))
+    );
+  });
+
+  if (matchingByName.length) {
+    const exactAvailable = matchingByName.filter((row) => normalizeText(row.status) === "available");
+    if (exactAvailable.length) {
+      const lines = exactAvailable.slice(0, 2).map((row) => `- ${formatUnitLine(row)}`).join("\n");
+      return `Si, aqui tienes opciones disponibles:\n${lines}\nQuieres que te agende cita para verlas?`;
+    }
+    const lines = matchingByName.slice(0, 2).map((row) => `- ${formatUnitLine(row)} (${row.status})`).join("\n");
+    return `De ese modelo/marca no tengo disponible ahora. En sistema aparece asi:\n${lines}\nSi quieres te aviso cuando entre disponible.`;
+  }
+
+  if (asksCheapest) {
+    if (!available.length) return "Ahora mismo no tengo unidades disponibles en sistema.";
+    const cheapest = [...available].sort((a, b) => Number(a.price || 0) - Number(b.price || 0))[0];
+    return `La unidad disponible mas barata ahora es:\n- ${formatUnitLine(cheapest)}\nQuieres que te agende cita para verla?`;
+  }
+
+  if (asksSuv || asksPickup || asksSedan) {
+    const filtered = available.filter((row) => {
+      const type = normalizeText(row.vehicle_type);
+      if (asksSuv) return type === "suv";
+      if (asksPickup) return type === "pickup";
+      if (asksSedan) return type === "sedan";
+      return true;
+    });
+    if (!filtered.length) {
+      return "No tengo match exacto con ese tipo en disponibles ahora. Si quieres te muestro alternativas disponibles.";
+    }
+    const lines = filtered.slice(0, 2).map((row) => `- ${formatUnitLine(row)}`).join("\n");
+    return `Te comparto opciones disponibles:\n${lines}\nSi quieres, te agendo cita para venir a verlas.`;
+  }
+
+  if (asksPriceMileageList) {
+    if (!available.length) return "Ahora mismo no tengo unidades disponibles en sistema.";
+    const lines = available.slice(0, 3).map((row) => `- ${formatUnitLine(row)}`).join("\n");
+    return `Opciones disponibles con precio y millaje:\n${lines}\nQuieres que te agende cita para verlas?`;
+  }
+
+  const total = rows.length;
+  return `${buildLiveInventorySummaryReply(rows)} (Inventario total: ${total}, disponibles: ${available.length}, reservados: ${reserved.length}, vendidos: ${sold.length}).`;
+}
+
 dealerAiRouter.post("/dealer/ai", async (req, res) => {
   try {
     const parsed = payloadSchema.safeParse(req.body);
@@ -69,7 +140,7 @@ dealerAiRouter.post("/dealer/ai", async (req, res) => {
       try {
         const rows = await listInventory();
         aiResult = {
-          reply: buildLiveInventorySummaryReply(rows),
+          reply: buildInventoryReplyForMessage(message, rows),
           intent: "buying_interest",
           entities: {
             model: null,
