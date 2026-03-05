@@ -269,13 +269,15 @@ function isPerformanceRequest(text) {
 }
 
 function asksForReyOrSalesContact(text) {
-  return /(hablar con rey|con rey|rey|vendedor|salesman|sales person|asesor|agente|owner|dueno|dueño|llamar a rey|hablar con alguien|con alguien|equipo|team|atencion directa|persona real)/i.test(
+  return /(hablar con rey|con rey|rey|vendedor|salesman|sales person|asesor|agente|owner|dueno|dueño|llamar a rey|hablar con alguien|con alguien|equipo|team|atencion directa|persona real|una persona|persona|humano|humano real)/i.test(
     text || ""
   );
 }
 
 function asksForMechanicContact(text) {
-  return /(mecanico|mec[aá]nico|mechanic|taller|servicio mecanico|service department)/i.test(text || "");
+  return /(mecanico|mec[aá]nico|mecanica|mec[aá]nica|mechanic|taller|servicio mecanico|service department|reparaci[oó]n|reparaciones|arreglan|arreglo)/i.test(
+    text || ""
+  );
 }
 
 function asksForItinOrIdDocs(text) {
@@ -289,7 +291,7 @@ function asksForLowOrNoCredit(text) {
 }
 
 function asksForLocation(text) {
-  return /(donde estan|d[oó]nde est[aá]n|donde se ubican|ubicacion|ubicación|direccion|dirección|address|location|dixie)/i.test(
+  return /(donde estan|d[oó]nde est[aá]n|donde se ubican|ubicacion|ubicación|direccion|dirección|address|location|dixie|en que ciudad|en qué ciudad|ciudad estan|ciudad est[aá]n)/i.test(
     text || ""
   );
 }
@@ -299,11 +301,15 @@ function asksForPhones(text) {
 }
 
 function asksForWeeklyPayments(text) {
-  return /(pagos?\s+semanales?|plan semanal|weekly)/i.test(text || "");
+  return /(pagos?\s+semanales?|plan semanal|weekly|pagar\s+semanal|por\s+semana|cuota\s+semanal|pago\s+por\s+semana)/i.test(
+    text || ""
+  );
 }
 
 function asksForTradeIn(text) {
-  return /(trade[\s-]*in|parte de pago|entregar mi carro|intercambio|carro usado)/i.test(text || "");
+  return /(trade[\s-]*in|parte de pago|entregar mi carro|intercambio|carro usado|usado(s)? a cuenta|reciben usados|compran usados)/i.test(
+    text || ""
+  );
 }
 
 function buildBusinessFaqFastpath(message, context, extracted) {
