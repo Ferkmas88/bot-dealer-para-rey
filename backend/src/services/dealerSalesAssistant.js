@@ -93,12 +93,13 @@ const DEALER_GENERIC_MESSAGE =
   "Aprobacion rapida, financiamiento flexible y opciones reales para que salgas manejando.";
 const VIRTUAL_ASSISTANT_LINE = "Soy el asistente virtual de Empire Rey y te puedo ayudar en todo.";
 const OPENING_PROMO_MESSAGE =
-  "Hola 👋\n" +
-  "Soy el asistente automático de Empire Rey Auto Sales. Estoy disponible 24/7 para ayudarte.\n\n" +
-  "Puedo ayudarte a:\n" +
-  "• Encontrar el carro que necesitas\n" +
-  "• Agendar una cita en el dealer\n" +
-  "• Comunicarte con Rey y con el mecánico";
+  "Hola 👋 Soy el asistente de Empire Rey Auto Sales.\n\n" +
+  "¿En qué te ayudo hoy?\n\n" +
+  "1️⃣ Buscar un carro\n" +
+  "2️⃣ Agendar una cita\n" +
+  "3️⃣ Hablar con Rey\n" +
+  "4️⃣ Hablar con el mecánico\n\n" +
+  "Escribe el número o dime qué necesitas.";
 const INTRO_RESET_HOURS = 24;
 
 const REY_CONTACT_REPLY =
