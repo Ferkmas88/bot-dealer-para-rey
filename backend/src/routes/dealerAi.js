@@ -26,7 +26,7 @@ const feedbackSchema = z.object({
 export const dealerAiRouter = Router();
 
 function isInventoryOrBrandRequest(message = "") {
-  return /(inventario|disponible|disponibles|stock|unidad|unidades|muestr|ensena|mostrar|que tienes|tienes|marca|modelo|precio|nissan|toyota|honda|ford|chevrolet|hyundai|kia|mazda|bmw|audi|camry|corolla|civic|altima|sentra)/i.test(
+  return /(inventario|disponible|disponibles|stock|unidad|unidades|muestr|ensena|mostrar|que tienes|tienes|marca|modelo|precio|barato|barata|economico|economica|menos de|por debajo de|nissan|toyota|honda|ford|chevrolet|hyundai|kia|mazda|bmw|audi|ram|camry|corolla|civic|altima|sentra|rogue|silverado|1500)/i.test(
     message
   );
 }
@@ -92,8 +92,16 @@ function buildInventoryReplyForMessage(message, rows = []) {
 
   if (asksCheapest) {
     if (!available.length) return "Ahora mismo no tengo unidades disponibles en sistema.";
+    const underSix = available
+      .filter((row) => Number(row.price || 0) < 6000)
+      .sort((a, b) => Number(a.price || 0) - Number(b.price || 0));
+    if (underSix.length) {
+      const lines = underSix.slice(0, 2).map((row) => `- ${formatUnitLine(row)}`).join("\n");
+      return `Si, tengo opciones por debajo de $6,000:\n${lines}\nQuieres que te agende cita para verlas?`;
+    }
+
     const cheapest = [...available].sort((a, b) => Number(a.price || 0) - Number(b.price || 0))[0];
-    return `La unidad disponible mas barata ahora es:\n- ${formatUnitLine(cheapest)}\nQuieres que te agende cita para verla?`;
+    return `Ahora mismo no tengo unidades por debajo de $6,000. La mas barata disponible es:\n- ${formatUnitLine(cheapest)}\nQuieres que te agende cita para verla?`;
   }
 
   if (asksSuv || asksPickup || asksSedan) {
