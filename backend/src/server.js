@@ -53,6 +53,20 @@ app.get("*", (req, res, next) => {
   return res.sendFile(path.join(frontendDistPath, "index.html"));
 });
 
+app.use((error, _req, res, _next) => {
+  console.error("[express-error]", error?.message || error);
+  if (res.headersSent) return;
+  res.status(500).json({ error: "Internal server error" });
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("[unhandledRejection]", reason);
+});
+
+process.on("uncaughtException", (error) => {
+  console.error("[uncaughtException]", error?.message || error);
+});
+
 app.listen(port, () => {
   console.log(`Backend running on http://localhost:${port}`);
   runStartupChecks();

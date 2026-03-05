@@ -51,69 +51,90 @@ function buildLiveInventorySummaryReply(rows = []) {
 }
 
 dealerAiRouter.post("/dealer/ai", async (req, res) => {
-  const parsed = payloadSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({
-      error: "Invalid payload",
-      details: parsed.error.flatten()
+  try {
+    const parsed = payloadSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "Invalid payload",
+        details: parsed.error.flatten()
+      });
+    }
+
+    const { message, sessionId } = parsed.data;
+    const session = getDealerSession(sessionId);
+    const learningState = getLearningState(sessionId);
+
+    let aiResult;
+    if (isInventoryOrBrandRequest(message)) {
+      try {
+        const rows = await listInventory();
+        aiResult = {
+          reply: buildLiveInventorySummaryReply(rows),
+          intent: "buying_interest",
+          entities: {
+            model: null,
+            budget: null,
+            date: null,
+            contact: { email: null, phone: null }
+          },
+          suggestions: [
+            "Solicitar presupuesto objetivo y forma de pago (contado/financiamiento)",
+            "Ofrecer test drive esta semana",
+            "Proponer 2-3 horarios de cita para acelerar cierre",
+            "Pedir telefono o email para seguimiento"
+          ],
+          skill: {
+            stage: "discover",
+            nextObjective: "Identificar marca/modelo ideal",
+            confidence: 0.9
+          },
+          source: "inventory-live-db",
+          mediaUrl: null
+        };
+      } catch {
+        aiResult = await processDealerSessionMessage(message, session.context, learningState);
+      }
+    } else {
+      aiResult = await processDealerSessionMessageWithLLM(message, session.context, learningState);
+    }
+
+    applyFirstTouchPolicy({ message, context: session.context, aiResult });
+
+    try {
+      await saveDealerTurn({
+        sessionId,
+        userMessage: message,
+        aiResult
+      });
+    } catch (error) {
+      console.error("saveDealerTurn failed:", error?.message || error);
+    }
+
+    return res.json({
+      reply: aiResult.reply,
+      intent: aiResult.intent,
+      entities: aiResult.entities,
+      suggestions: aiResult.suggestions,
+      skill: aiResult.skill || null,
+      source: aiResult.source || "fallback",
+      mediaUrl: aiResult.mediaUrl || null
+    });
+  } catch (error) {
+    console.error("POST /dealer/ai failed:", error?.message || error);
+    return res.status(200).json({
+      reply: "Hubo un problema temporal. Te puedo ayudar a buscar carro y agendar cita en un momento.",
+      intent: "question",
+      entities: { model: null, budget: null, date: null, contact: { email: null, phone: null } },
+      suggestions: [
+        "Que tipo de carro buscas?",
+        "Cual es tu presupuesto aproximado?",
+        "Quieres agendar una cita?"
+      ],
+      skill: null,
+      source: "route-fallback",
+      mediaUrl: null
     });
   }
-
-  const { message, sessionId } = parsed.data;
-  const session = getDealerSession(sessionId);
-  const learningState = getLearningState(sessionId);
-
-  let aiResult;
-  if (isInventoryOrBrandRequest(message)) {
-    try {
-      const rows = await listInventory();
-      aiResult = {
-        reply: buildLiveInventorySummaryReply(rows),
-        intent: "buying_interest",
-        entities: {
-          model: null,
-          budget: null,
-          date: null,
-          contact: { email: null, phone: null }
-        },
-        suggestions: [
-          "Solicitar presupuesto objetivo y forma de pago (contado/financiamiento)",
-          "Ofrecer test drive esta semana",
-          "Proponer 2-3 horarios de cita para acelerar cierre",
-          "Pedir telefono o email para seguimiento"
-        ],
-        skill: {
-          stage: "discover",
-          nextObjective: "Identificar marca/modelo ideal",
-          confidence: 0.9
-        },
-        source: "inventory-live-db",
-        mediaUrl: null
-      };
-    } catch {
-      aiResult = await processDealerSessionMessage(message, session.context, learningState);
-    }
-  } else {
-    aiResult = await processDealerSessionMessageWithLLM(message, session.context, learningState);
-  }
-
-  applyFirstTouchPolicy({ message, context: session.context, aiResult });
-
-  await saveDealerTurn({
-    sessionId,
-    userMessage: message,
-    aiResult
-  });
-
-  return res.json({
-    reply: aiResult.reply,
-    intent: aiResult.intent,
-    entities: aiResult.entities,
-    suggestions: aiResult.suggestions,
-    skill: aiResult.skill || null,
-    source: aiResult.source || "fallback",
-    mediaUrl: aiResult.mediaUrl || null
-  });
 });
 
 dealerAiRouter.get("/dealer/ai/connection", async (_req, res) => {
