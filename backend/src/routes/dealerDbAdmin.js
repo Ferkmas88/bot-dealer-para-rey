@@ -34,7 +34,11 @@ import {
 import { sendManualWhatsAppReply } from "../services/twilioSender.js";
 import { sendMetaWhatsAppText } from "../services/metaSender.js";
 import { getPushPublicConfig, getPushRuntimeStatus, sendTestPush } from "../services/pushNotifications.js";
-import { sendAppointmentConfirmedOwnerEmail, sendOwnerTestEmail } from "../services/ownerNotifications.js";
+import {
+  sendAppointmentConfirmedOwnerEmail,
+  sendAppointmentCreatedOwnerEmail,
+  sendOwnerTestEmail
+} from "../services/ownerNotifications.js";
 
 const inventoryPayloadSchema = z.object({
   make: z.string().min(1),
@@ -287,10 +291,18 @@ dealerDbAdminRouter.post("/dealer/db/appointments", async (req, res) => {
   if (!lead) return res.status(404).json({ error: "Lead not found" });
 
   const row = await createAppointment(parsed.data);
-  await updateLeadStatus(parsed.data.lead_session_id, "APPT_PENDING", {
+  const updatedLead = await updateLeadStatus(parsed.data.lead_session_id, "APPT_PENDING", {
     priority: String(lead?.priority || "NORMAL").toUpperCase(),
     mode: String(lead?.mode || "BOT").toUpperCase()
   });
+  const emailResult = await sendAppointmentCreatedOwnerEmail({
+    to: process.env.OWNER_NOTIFICATION_EMAIL || "ferkmas88@gmail.com",
+    appointment: row,
+    lead: updatedLead || lead
+  });
+  if (!emailResult?.ok) {
+    console.error("Appointment create email failed:", emailResult?.reason || "unknown");
+  }
   return res.status(201).json({ row });
 });
 

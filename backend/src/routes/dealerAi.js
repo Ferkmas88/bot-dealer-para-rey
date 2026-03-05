@@ -18,6 +18,7 @@ import {
   updateLeadStatus,
   upsertLeadProfile
 } from "../services/sqliteLeadStore.js";
+import { sendAppointmentCreatedOwnerEmail } from "../services/ownerNotifications.js";
 
 const payloadSchema = z.object({
   message: z.string().min(1),
@@ -274,6 +275,17 @@ dealerAiRouter.post("/dealer/ai", async (req, res) => {
             confirmation_state: "PROPOSED",
             notes: "Creada por bot /dealer/ai"
           });
+        }
+        const lead = await updateLeadStatus(sessionId, "APPT_PENDING");
+        if (!existing) {
+          const emailResult = await sendAppointmentCreatedOwnerEmail({
+            to: process.env.OWNER_NOTIFICATION_EMAIL || "ferkmas88@gmail.com",
+            appointment: row,
+            lead
+          });
+          if (!emailResult?.ok) {
+            console.error("Appointment create email failed:", emailResult?.reason || "unknown");
+          }
         }
         const when = new Date(row?.scheduled_at || scheduledAt);
         const whenText = Number.isNaN(when.getTime())

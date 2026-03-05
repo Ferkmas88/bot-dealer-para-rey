@@ -36,6 +36,22 @@ function buildEmailHtml({ appointment, lead }) {
   `;
 }
 
+function buildAppointmentCreatedEmailHtml({ appointment, lead }) {
+  const leadName = lead?.name || "Sin nombre";
+  const leadPhone = lead?.phone || appointment?.lead_phone || appointment?.lead_session_id || "N/A";
+  return `
+    <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111">
+      <h2>Nueva Cita Creada - Empire Rey</h2>
+      <p><strong>Cliente:</strong> ${leadName}</p>
+      <p><strong>Telefono:</strong> ${leadPhone}</p>
+      <p><strong>Lead:</strong> ${appointment?.lead_session_id || "-"}</p>
+      <p><strong>Fecha/Hora:</strong> ${formatDateTime(appointment?.scheduled_at)}</p>
+      <p><strong>Estado:</strong> ${appointment?.status || "-"}</p>
+      <p><strong>Vehiculo ID:</strong> ${appointment?.vehicle_id ?? "-"}</p>
+    </div>
+  `;
+}
+
 function buildHotLeadEmailHtml({ lead, lastMessage = "", appointment = null }) {
   const leadName = lead?.name || "Sin nombre";
   const leadPhone = lead?.phone || lead?.session_id || "N/A";
@@ -108,6 +124,20 @@ export async function sendAppointmentConfirmedOwnerEmail({ to, appointment, lead
 
   if (!result.ok) {
     console.error("Owner appointment email failed:", result.reason);
+  }
+
+  return result;
+}
+
+export async function sendAppointmentCreatedOwnerEmail({ to, appointment, lead }) {
+  if (!to) return { ok: false, reason: "Owner email missing" };
+
+  const subject = `Nueva cita: ${lead?.name || appointment?.lead_session_id || "Lead"}`;
+  const html = buildAppointmentCreatedEmailHtml({ appointment, lead });
+  const result = await sendViaResend({ to, subject, html });
+
+  if (!result.ok) {
+    console.error("Owner appointment created email failed:", result.reason);
   }
 
   return result;
