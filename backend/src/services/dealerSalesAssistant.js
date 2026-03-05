@@ -102,9 +102,9 @@ const OPENING_PROMO_MESSAGE =
 const INTRO_RESET_HOURS = 24;
 
 const REY_CONTACT_REPLY =
-  "Perfecto, te conecto con Rey para ayudarte directamente.\n" + "+1 (502) 576-8116 / +1 (502) 780-1096";
+  "Perfecto, te conecto con Rey para ayudarte directamente.\n" + "+1 (502) 576-8116";
 const MECHANIC_CONTACT_REPLY =
-  "Si, tambien ofrecemos servicio mecanico.\n" + "Puedes comunicarte al +1 (502) 576-8116 / +1 (502) 780-1096.";
+  "Si, tambien ofrecemos servicio mecanico.\n" + "Pronto tendremos esa informacion disponible.";
 const DEALER_ADDRESS_REPLY = "Estamos en 3510 Dixie Hwy, Louisville, Kentucky, USA.";
 const DEALER_PHONES_REPLY = "Puedes llamarnos al (502) 576-8116 o (502) 780-1096.";
 

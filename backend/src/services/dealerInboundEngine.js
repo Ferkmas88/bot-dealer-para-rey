@@ -26,7 +26,7 @@ import {
 
 const DEALER_ADDRESS_TEXT = "3510 Dixie Hwy, Louisville, KY 40216";
 const MECHANIC_CONTACT_REPLY =
-  "Si, contamos con servicio mecanico. Puedes comunicarte al +1 (502) 576-8116 / +1 (502) 780-1096.";
+  "Si, contamos con servicio mecanico. Pronto tendremos esa informacion disponible.";
 const MENU_ENTRY_REPLY =
   "Hola 👋 Soy el asistente de Empire Rey Auto Sales.\n\n" +
   "¿En que te ayudo hoy?\n\n" +
@@ -868,7 +868,7 @@ export async function processInboundDealerMessage({
     const reply = applyFirstTouchToReply({
       session,
       incomingText,
-      reply: "Claro. Puedes comunicarte con Rey al +1 (502) 576-8116 / +1 (502) 780-1096."
+      reply: "Claro. Puedes comunicarte con Rey al +1 (502) 576-8116."
     });
     await persistIncomingUserMessage({ sessionId, userMessage: incomingText, source: "menu-option-3" });
     await persistOutgoingAssistantMessage({
@@ -885,7 +885,7 @@ export async function processInboundDealerMessage({
     const reply = applyFirstTouchToReply({
       session,
       incomingText,
-      reply: "Claro. Puedes comunicarte con el mecanico al +1 (502) 576-8116 / +1 (502) 780-1096."
+      reply: "Claro. Si, contamos con servicio mecanico. Pronto tendremos esa informacion disponible."
     });
     await persistIncomingUserMessage({ sessionId, userMessage: incomingText, source: "menu-option-4" });
     await persistOutgoingAssistantMessage({
