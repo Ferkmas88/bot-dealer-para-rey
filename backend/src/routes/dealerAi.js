@@ -3,6 +3,7 @@ import { z } from "zod";
 import { applyFirstTouchPolicy, processDealerSessionMessage, processDealerSessionMessageWithLLM } from "../services/dealerSalesAssistant.js";
 import { checkLlmConnection } from "../services/openaiClient.js";
 import {
+  clearDealerSessionCache,
   getDealerSession,
   getDealerSessionSummary,
   getLearningState,
@@ -481,6 +482,13 @@ dealerAiRouter.post("/dealer/ai/feedback", async (req, res) => {
 dealerAiRouter.get("/dealer/ai/session/:sessionId", (req, res) => {
   const summary = getDealerSessionSummary(req.params.sessionId);
   return res.json(summary);
+});
+
+dealerAiRouter.post("/dealer/ai/cache/clear", (req, res) => {
+  const body = req.body && typeof req.body === "object" ? req.body : {};
+  const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
+  const result = clearDealerSessionCache(sessionId || null);
+  return res.json({ ok: true, cache: result });
 });
 
 dealerAiRouter.get("/dealer/ai/storage", async (_req, res) => {

@@ -26,9 +26,10 @@ Base de proyecto para arrancar un bot AI para concesionario/dealer con:
    - `OPENAI_API_KEY`
    - `OPENAI_MODEL` (ejemplo: `gpt-4o-mini` o `gpt-4.1-mini`)
    - `SYSTEM_PROMPT`
-   - `NEON_DATABASE_URL` (opcional, recomendado para inventario persistente en produccion)
+   - `NEON_DATABASE_URL` (requerido en produccion)
+   - `NEON_ONLY=true` (recomendado para forzar Neon y desactivar fallback SQLite)
 
-Si `NEON_DATABASE_URL` existe, el inventario usa Postgres (Neon). Si no existe, usa SQLite local.
+En produccion se recomienda Neon-only para evitar desalineaciones con SQLite local.
 
 ## 2) Instalar dependencias
 
@@ -57,6 +58,8 @@ npm run dev
 - `POST /dealer/db/inventory` -> crear unidad
 - `PUT /dealer/db/inventory/:id` -> actualizar unidad
 - `DELETE /dealer/db/inventory/:id` -> eliminar unidad
+- `GET /dealer/ai/storage` -> confirma si backend esta usando `postgres` o `sqlite`
+- `POST /dealer/ai/cache/clear` -> limpia cache de sesiones en memoria (`{ "sessionId": "..." }` opcional)
 
 ## Skill conversacional (DB on-demand)
 

@@ -8,8 +8,18 @@ mkdirSync(dirname(sqlitePath), { recursive: true });
 
 const db = new DatabaseSync(sqlitePath);
 const { Pool } = pg;
-const pgConnectionString = process.env.NEON_DATABASE_URL || process.env.DATABASE_URL || "";
+const neonConnectionString = String(process.env.NEON_DATABASE_URL || "").trim();
+const fallbackPgConnectionString = String(process.env.DATABASE_URL || "").trim();
 const isProduction = String(process.env.NODE_ENV || "").toLowerCase() === "production";
+const neonOnlyRequested =
+  String(process.env.NEON_ONLY || process.env.REQUIRE_NEON || "")
+    .trim()
+    .toLowerCase() === "1" ||
+  String(process.env.NEON_ONLY || process.env.REQUIRE_NEON || "")
+    .trim()
+    .toLowerCase() === "true";
+const neonOnlyMode = isProduction || neonOnlyRequested;
+const pgConnectionString = neonConnectionString || (!neonOnlyMode ? fallbackPgConnectionString : "");
 const forceSqliteRequested =
   String(process.env.FORCE_SQLITE || "")
     .trim()
@@ -17,7 +27,7 @@ const forceSqliteRequested =
   String(process.env.FORCE_SQLITE || "")
     .trim()
     .toLowerCase() === "true";
-const forceSqlite = !isProduction && forceSqliteRequested;
+const forceSqlite = !neonOnlyMode && !isProduction && forceSqliteRequested;
 const usePgInventory = !forceSqlite && Boolean(pgConnectionString);
 const pgPool = usePgInventory
   ? new Pool({
@@ -32,6 +42,18 @@ if (forceSqliteRequested && isProduction) {
 
 if (forceSqlite) {
   console.warn("[db] FORCE_SQLITE enabled: skipping Postgres/Neon connection.");
+}
+
+if (neonOnlyMode && !neonConnectionString) {
+  throw new Error("[db] NEON_DATABASE_URL is required when running in NEON_ONLY mode.");
+}
+
+function handlePgFallbackError(scope, error) {
+  const reason = error?.message || String(error || "unknown error");
+  if (neonOnlyMode) {
+    throw new Error(`[db] ${scope} failed in NEON_ONLY mode: ${reason}`);
+  }
+  console.error(`[db] ${scope} Postgres failed, using SQLite fallback:`, reason);
 }
 
 db.exec(`
@@ -360,7 +382,7 @@ async function ensurePgInventorySchemaAndSeed() {
 }
 
 const pgInventoryReady = ensurePgInventorySchemaAndSeed().catch((error) => {
-  console.error("Neon inventory init failed, using SQLite fallback:", error?.message || error);
+  handlePgFallbackError("Neon inventory init", error);
 });
 
 async function ensurePgMessagingSchema() {
@@ -536,7 +558,7 @@ async function ensurePgMessagingSchema() {
 }
 
 const pgMessagingReady = ensurePgMessagingSchema().catch((error) => {
-  console.error("Neon messaging init failed, using SQLite fallback:", error?.message || error);
+  handlePgFallbackError("Neon messaging init", error);
 });
 
 const upsertLeadStmt = db.prepare(`
@@ -918,7 +940,7 @@ export async function getConversationSettings(sessionId) {
       }
       return row;
     } catch (error) {
-      console.error("getConversationSettings Postgres failed, using SQLite fallback:", error?.message || error);
+      handlePgFallbackError("getConversationSettings", error);
     }
   }
 
@@ -965,7 +987,7 @@ export async function setConversationBotEnabled(sessionId, enabled) {
       );
       return getConversationSettings(sessionId);
     } catch (error) {
-      console.error("setConversationBotEnabled Postgres failed, using SQLite fallback:", error?.message || error);
+      handlePgFallbackError("setConversationBotEnabled", error);
     }
   }
 
@@ -990,7 +1012,7 @@ export async function markConversationRead(sessionId) {
       );
       return getConversationSettings(sessionId);
     } catch (error) {
-      console.error("markConversationRead Postgres failed, using SQLite fallback:", error?.message || error);
+      handlePgFallbackError("markConversationRead", error);
     }
   }
 
@@ -1132,7 +1154,7 @@ export async function listDealerConversations({ limit = 100, query = "" } = {}) 
       );
       return result.rows || [];
     } catch (error) {
-      console.error("listDealerConversations Postgres failed, using SQLite fallback:", error?.message || error);
+      handlePgFallbackError("listDealerConversations", error);
     }
   }
 
@@ -1368,7 +1390,7 @@ export async function listDealerMessagesBySession(sessionId, { limit = 200, befo
           );
       return (result.rows || []).reverse();
     } catch (error) {
-      console.error("listDealerMessagesBySession Postgres failed, using SQLite fallback:", error?.message || error);
+      handlePgFallbackError("listDealerMessagesBySession", error);
     }
   }
 

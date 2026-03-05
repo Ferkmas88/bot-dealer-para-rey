@@ -197,3 +197,24 @@ export function getDealerSessionSummary(sessionId) {
     updatedAt: session.updatedAt
   };
 }
+
+export function clearDealerSessionCache(sessionId = null) {
+  const target = String(sessionId || "").trim();
+  if (target) {
+    const existed = sessions.delete(target);
+    return {
+      scope: "single",
+      sessionId: target,
+      cleared: existed ? 1 : 0,
+      remaining: sessions.size
+    };
+  }
+
+  const cleared = sessions.size;
+  sessions.clear();
+  return {
+    scope: "all",
+    cleared,
+    remaining: 0
+  };
+}
