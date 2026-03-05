@@ -1623,6 +1623,100 @@ export async function deleteAppointment(id) {
   return true;
 }
 
+export async function deleteConversationBySessionId(sessionId) {
+  const safeSessionId = String(sessionId || "").trim();
+  if (!safeSessionId) return { ok: false, deleted: 0 };
+
+  if (usePgInventory && pgPool) {
+    await pgMessagingReady;
+    const client = await pgPool.connect();
+    try {
+      await client.query("BEGIN");
+      const appointments = await client.query("DELETE FROM appointments WHERE lead_session_id = $1", [safeSessionId]);
+      const messages = await client.query("DELETE FROM messages WHERE session_id = $1", [safeSessionId]);
+      const settings = await client.query("DELETE FROM conversation_settings WHERE session_id = $1", [safeSessionId]);
+      const leads = await client.query("DELETE FROM leads WHERE session_id = $1", [safeSessionId]);
+      await client.query("COMMIT");
+      const deleted =
+        Number(appointments.rowCount || 0) +
+        Number(messages.rowCount || 0) +
+        Number(settings.rowCount || 0) +
+        Number(leads.rowCount || 0);
+      return { ok: true, deleted };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  const runSqliteDelete = db.transaction((sid) => {
+    const appointments = db.prepare("DELETE FROM appointments WHERE lead_session_id = ?").run(sid);
+    const messages = db.prepare("DELETE FROM messages WHERE session_id = ?").run(sid);
+    const settings = db.prepare("DELETE FROM conversation_settings WHERE session_id = ?").run(sid);
+    const leads = db.prepare("DELETE FROM leads WHERE session_id = ?").run(sid);
+    return (
+      Number(appointments.changes || 0) +
+      Number(messages.changes || 0) +
+      Number(settings.changes || 0) +
+      Number(leads.changes || 0)
+    );
+  });
+
+  const deleted = runSqliteDelete(safeSessionId);
+  return { ok: true, deleted };
+}
+
+export async function purgeConversationsByPrefixes(prefixes = []) {
+  const cleanPrefixes = Array.isArray(prefixes)
+    ? prefixes.map((v) => String(v || "").trim()).filter(Boolean)
+    : [];
+  if (!cleanPrefixes.length) return { ok: true, deleted: 0 };
+
+  if (usePgInventory && pgPool) {
+    await pgMessagingReady;
+    const patterns = cleanPrefixes.map((p) => `${p}%`);
+    const client = await pgPool.connect();
+    try {
+      await client.query("BEGIN");
+      const appointments = await client.query("DELETE FROM appointments WHERE lead_session_id LIKE ANY($1::text[])", [patterns]);
+      const messages = await client.query("DELETE FROM messages WHERE session_id LIKE ANY($1::text[])", [patterns]);
+      const settings = await client.query("DELETE FROM conversation_settings WHERE session_id LIKE ANY($1::text[])", [patterns]);
+      const leads = await client.query("DELETE FROM leads WHERE session_id LIKE ANY($1::text[])", [patterns]);
+      await client.query("COMMIT");
+      const deleted =
+        Number(appointments.rowCount || 0) +
+        Number(messages.rowCount || 0) +
+        Number(settings.rowCount || 0) +
+        Number(leads.rowCount || 0);
+      return { ok: true, deleted };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  const where = cleanPrefixes.map(() => "session_id LIKE ?").join(" OR ");
+  const args = cleanPrefixes.map((p) => `${p}%`);
+  const runSqlitePurge = db.transaction((clause, values) => {
+    const appointments = db.prepare(`DELETE FROM appointments WHERE ${clause.replace(/session_id/g, "lead_session_id")}`).run(...values);
+    const messages = db.prepare(`DELETE FROM messages WHERE ${clause}`).run(...values);
+    const settings = db.prepare(`DELETE FROM conversation_settings WHERE ${clause}`).run(...values);
+    const leads = db.prepare(`DELETE FROM leads WHERE ${clause}`).run(...values);
+    return (
+      Number(appointments.changes || 0) +
+      Number(messages.changes || 0) +
+      Number(settings.changes || 0) +
+      Number(leads.changes || 0)
+    );
+  });
+  const deleted = runSqlitePurge(where, args);
+  return { ok: true, deleted };
+}
+
 export async function findAppointmentsForReminder({ minutesBefore = 120 } = {}) {
   const now = new Date();
   const targetStart = new Date(now.getTime() + (minutesBefore - 1) * 60_000).toISOString();

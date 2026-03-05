@@ -16,6 +16,8 @@ import {
   getInventoryById,
   listAppointments,
   listDealerConversations,
+  deleteConversationBySessionId,
+  purgeConversationsByPrefixes,
   listLeads,
   listDealerMessagesBySession,
   markConversationRead,
@@ -328,6 +330,31 @@ dealerDbAdminRouter.get("/dealer/db/conversations", async (req, res) => {
   const query = typeof req.query.query === "string" ? req.query.query : "";
   const rows = await listDealerConversations({ limit, query });
   return res.json({ rows });
+});
+
+dealerDbAdminRouter.delete("/dealer/db/conversations/:sessionId", async (req, res) => {
+  const sessionId = String(req.params.sessionId || "").trim();
+  if (!sessionId) {
+    return res.status(400).json({ error: "sessionId is required" });
+  }
+  const result = await deleteConversationBySessionId(sessionId);
+  return res.json({ ok: true, ...result, sessionId });
+});
+
+dealerDbAdminRouter.post("/dealer/db/conversations/purge-tests", async (req, res) => {
+  const defaults = [
+    "qa-",
+    "qa2-",
+    "test-",
+    "loadtest-",
+    "post-deploy-",
+    "deploy-watch",
+    "probe-inline-context",
+    "cheap-car-"
+  ];
+  const prefixes = Array.isArray(req.body?.prefixes) ? req.body.prefixes : defaults;
+  const result = await purgeConversationsByPrefixes(prefixes);
+  return res.json({ ok: true, prefixes, ...result });
 });
 
 dealerDbAdminRouter.post("/dealer/db/conversations/create-contact", async (req, res) => {
