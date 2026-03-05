@@ -9,13 +9,15 @@ mkdirSync(dirname(sqlitePath), { recursive: true });
 const db = new DatabaseSync(sqlitePath);
 const { Pool } = pg;
 const pgConnectionString = process.env.NEON_DATABASE_URL || process.env.DATABASE_URL || "";
-const forceSqlite =
+const isProduction = String(process.env.NODE_ENV || "").toLowerCase() === "production";
+const forceSqliteRequested =
   String(process.env.FORCE_SQLITE || "")
     .trim()
     .toLowerCase() === "1" ||
   String(process.env.FORCE_SQLITE || "")
     .trim()
     .toLowerCase() === "true";
+const forceSqlite = !isProduction && forceSqliteRequested;
 const usePgInventory = !forceSqlite && Boolean(pgConnectionString);
 const pgPool = usePgInventory
   ? new Pool({
@@ -23,6 +25,10 @@ const pgPool = usePgInventory
       ssl: { rejectUnauthorized: false }
     })
   : null;
+
+if (forceSqliteRequested && isProduction) {
+  console.warn("[db] FORCE_SQLITE was requested but is ignored in production; using Postgres/Neon.");
+}
 
 if (forceSqlite) {
   console.warn("[db] FORCE_SQLITE enabled: skipping Postgres/Neon connection.");
