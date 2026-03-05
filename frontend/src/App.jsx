@@ -44,6 +44,7 @@ const EMPTY_FORM = {
   year: "",
   price: "",
   mileage: "",
+  vehicle_type: "Sedan",
   transmission: "",
   fuel_type: "",
   color: "",
@@ -1441,6 +1442,7 @@ export default function App() {
       year: String(row.year || ""),
       price: String(row.price || ""),
       mileage: String(row.mileage || ""),
+      vehicle_type: row.vehicle_type || "Sedan",
       transmission: row.transmission || "",
       fuel_type: row.fuel_type || "",
       color: row.color || "",
@@ -1648,6 +1650,11 @@ export default function App() {
                   <input type="number" placeholder="Ano" value={inventoryForm.year} onChange={(e) => setInventoryForm((prev) => ({ ...prev, year: e.target.value }))} required />
                   <input type="number" step="0.01" placeholder="Precio" value={inventoryForm.price} onChange={(e) => setInventoryForm((prev) => ({ ...prev, price: e.target.value }))} required />
                   <input type="number" placeholder="Millaje" value={inventoryForm.mileage} onChange={(e) => setInventoryForm((prev) => ({ ...prev, mileage: e.target.value }))} required />
+                  <select value={inventoryForm.vehicle_type} onChange={(e) => setInventoryForm((prev) => ({ ...prev, vehicle_type: e.target.value }))} required>
+                    <option value="Sedan">Sedan</option>
+                    <option value="SUV">SUV</option>
+                    <option value="Pickup">Pickup</option>
+                  </select>
                   <input placeholder="Transmision" value={inventoryForm.transmission} onChange={(e) => setInventoryForm((prev) => ({ ...prev, transmission: e.target.value }))} required />
                   <input placeholder="Combustible" value={inventoryForm.fuel_type} onChange={(e) => setInventoryForm((prev) => ({ ...prev, fuel_type: e.target.value }))} required />
                   <input placeholder="Color" value={inventoryForm.color} onChange={(e) => setInventoryForm((prev) => ({ ...prev, color: e.target.value }))} required />
@@ -1679,7 +1686,7 @@ export default function App() {
                         <tr key={row.id}>
                           <td>{row.id}</td>
                           <td>
-                            {row.year} {row.make} {row.model}
+                            {row.year} {row.make} {row.model} ({row.vehicle_type || "Sedan"})
                           </td>
                           <td>${Number(row.price || 0).toLocaleString("en-US")}</td>
                           <td>{Number(row.mileage || 0).toLocaleString("en-US")} mi</td>

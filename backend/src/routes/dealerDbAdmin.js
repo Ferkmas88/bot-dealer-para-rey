@@ -44,6 +44,7 @@ const inventoryPayloadSchema = z.object({
   mileage: z.coerce.number().int().nonnegative(),
   transmission: z.string().min(1),
   fuel_type: z.string().min(1),
+  vehicle_type: z.enum(["Sedan", "SUV", "Pickup"]).default("Sedan"),
   color: z.string().min(1),
   status: z.enum(["available", "sold", "reserved"]).default("available"),
   featured: z.coerce.number().int().min(0).max(1).optional().default(0)

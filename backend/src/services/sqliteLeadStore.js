@@ -79,6 +79,7 @@ db.exec(`
     mileage INTEGER NOT NULL,
     transmission TEXT NOT NULL,
     fuel_type TEXT NOT NULL,
+    vehicle_type TEXT NOT NULL DEFAULT 'Sedan',
     color TEXT NOT NULL,
     status TEXT NOT NULL,
     featured INTEGER NOT NULL DEFAULT 0,
@@ -182,6 +183,7 @@ function ensureSqliteSchemaEvolution() {
   ensureSqliteColumn("leads", "last_message_at", "TEXT");
   ensureSqliteColumn("messages", "direction", "TEXT");
   ensureSqliteColumn("conversation_events", "copy_variant", "TEXT");
+  ensureSqliteColumn("inventory", "vehicle_type", "TEXT NOT NULL DEFAULT 'Sedan'");
 }
 
 ensureSqliteSchemaEvolution();
@@ -195,6 +197,7 @@ const DEFAULT_INVENTORY = [
     mileage: 80000,
     transmission: "good",
     fuel_type: "bad",
+    vehicle_type: "Sedan",
     color: "white",
     status: "available",
     featured: 0
@@ -207,6 +210,7 @@ const DEFAULT_INVENTORY = [
     mileage: 80000,
     transmission: "buena",
     fuel_type: "bien",
+    vehicle_type: "Sedan",
     color: "rojo",
     status: "available",
     featured: 0
@@ -220,9 +224,9 @@ function ensureDefaultInventorySeed() {
 
   const insertSeedStmt = db.prepare(`
     INSERT INTO inventory (
-      id, make, model, year, price, mileage, transmission, fuel_type, color, status, featured, created_at, updated_at
+      id, make, model, year, price, mileage, transmission, fuel_type, vehicle_type, color, status, featured, created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const now = new Date().toISOString();
@@ -238,6 +242,7 @@ function ensureDefaultInventorySeed() {
         Number(unit.mileage),
         unit.transmission,
         unit.fuel_type,
+        unit.vehicle_type || "Sedan",
         unit.color,
         unit.status,
         Number(unit.featured) ? 1 : 0,
@@ -271,6 +276,7 @@ async function ensurePgInventorySchemaAndSeed() {
       mileage INTEGER NOT NULL,
       transmission TEXT NOT NULL,
       fuel_type TEXT NOT NULL,
+      vehicle_type TEXT NOT NULL DEFAULT 'Sedan',
       color TEXT NOT NULL,
       status TEXT NOT NULL,
       featured INTEGER NOT NULL DEFAULT 0,
@@ -288,9 +294,9 @@ async function ensurePgInventorySchemaAndSeed() {
     await pgPool.query(
       `
         INSERT INTO inventory (
-          make, model, year, price, mileage, transmission, fuel_type, color, status, featured, created_at, updated_at
+          make, model, year, price, mileage, transmission, fuel_type, vehicle_type, color, status, featured, created_at, updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       `,
       [
         unit.make,
@@ -300,6 +306,7 @@ async function ensurePgInventorySchemaAndSeed() {
         Number(unit.mileage),
         unit.transmission,
         unit.fuel_type,
+        unit.vehicle_type || "Sedan",
         unit.color,
         unit.status,
         Number(unit.featured) ? 1 : 0,
@@ -308,6 +315,9 @@ async function ensurePgInventorySchemaAndSeed() {
       ]
     );
   }
+
+  await pgPool.query("ALTER TABLE inventory ADD COLUMN IF NOT EXISTS vehicle_type TEXT NOT NULL DEFAULT 'Sedan'");
+  await pgPool.query("UPDATE inventory SET vehicle_type = 'Sedan' WHERE vehicle_type IS NULL OR TRIM(vehicle_type) = ''");
 }
 
 const pgInventoryReady = ensurePgInventorySchemaAndSeed().catch((error) => {
@@ -2185,7 +2195,7 @@ export async function searchAvailableInventory({ make = null, budgetMax = null, 
 
     const safeLimit = Math.max(1, Math.min(Number(limit) || 2, 2));
     const query = `
-      SELECT id, make, model, year, price, mileage, transmission, fuel_type, color, status, featured
+      SELECT id, make, model, year, price, mileage, transmission, fuel_type, vehicle_type, color, status, featured
       FROM inventory
       WHERE ${conditions.join(" AND ")}
       ORDER BY featured DESC, year DESC, price ASC
@@ -2222,7 +2232,7 @@ export async function searchAvailableInventory({ make = null, budgetMax = null, 
   params.push(Math.max(1, Math.min(Number(limit) || 2, 2)));
 
   const sql = `
-    SELECT id, make, model, year, price, mileage, transmission, fuel_type, color, status, featured
+    SELECT id, make, model, year, price, mileage, transmission, fuel_type, vehicle_type, color, status, featured
     FROM inventory
     WHERE ${conditions.join(" AND ")}
     ORDER BY featured DESC, year DESC, price ASC
@@ -2255,7 +2265,7 @@ export async function searchSimilarAvailableInventory({ budgetMax = null, color 
 
     const safeLimit = Math.max(1, Math.min(Number(limit) || 2, 2));
     const query = `
-      SELECT id, make, model, year, price, mileage, transmission, fuel_type, color, status, featured
+      SELECT id, make, model, year, price, mileage, transmission, fuel_type, vehicle_type, color, status, featured
       FROM inventory
       WHERE ${conditions.join(" AND ")}
       ORDER BY featured DESC, year DESC, price ASC
@@ -2287,7 +2297,7 @@ export async function searchSimilarAvailableInventory({ budgetMax = null, color 
   params.push(Math.max(1, Math.min(Number(limit) || 2, 2)));
 
   const sql = `
-    SELECT id, make, model, year, price, mileage, transmission, fuel_type, color, status, featured
+    SELECT id, make, model, year, price, mileage, transmission, fuel_type, vehicle_type, color, status, featured
     FROM inventory
     WHERE ${conditions.join(" AND ")}
     ORDER BY featured DESC, year DESC, price ASC
@@ -2323,7 +2333,7 @@ export async function listInventory({ status = null } = {}) {
     if (hasStatus) {
       const result = await pgPool.query(
         `
-          SELECT id, make, model, year, price, mileage, transmission, fuel_type, color, status, featured, created_at, updated_at
+          SELECT id, make, model, year, price, mileage, transmission, fuel_type, vehicle_type, color, status, featured, created_at, updated_at
           FROM inventory
           WHERE LOWER(status) = LOWER($1)
           ORDER BY updated_at DESC, id DESC
@@ -2333,7 +2343,7 @@ export async function listInventory({ status = null } = {}) {
       return result.rows || [];
     }
     const result = await pgPool.query(`
-      SELECT id, make, model, year, price, mileage, transmission, fuel_type, color, status, featured, created_at, updated_at
+      SELECT id, make, model, year, price, mileage, transmission, fuel_type, vehicle_type, color, status, featured, created_at, updated_at
       FROM inventory
       ORDER BY updated_at DESC, id DESC
     `);
@@ -2343,13 +2353,13 @@ export async function listInventory({ status = null } = {}) {
   const hasStatus = typeof status === "string" && status.trim().length > 0;
   const sql = hasStatus
     ? `
-      SELECT id, make, model, year, price, mileage, transmission, fuel_type, color, status, featured, created_at, updated_at
+      SELECT id, make, model, year, price, mileage, transmission, fuel_type, vehicle_type, color, status, featured, created_at, updated_at
       FROM inventory
       WHERE LOWER(status) = LOWER(?)
       ORDER BY updated_at DESC, id DESC
     `
     : `
-      SELECT id, make, model, year, price, mileage, transmission, fuel_type, color, status, featured, created_at, updated_at
+      SELECT id, make, model, year, price, mileage, transmission, fuel_type, vehicle_type, color, status, featured, created_at, updated_at
       FROM inventory
       ORDER BY updated_at DESC, id DESC
     `;
@@ -2362,7 +2372,7 @@ export async function getInventoryById(id) {
     await pgInventoryReady;
     const result = await pgPool.query(
       `
-      SELECT id, make, model, year, price, mileage, transmission, fuel_type, color, status, featured, created_at, updated_at
+      SELECT id, make, model, year, price, mileage, transmission, fuel_type, vehicle_type, color, status, featured, created_at, updated_at
       FROM inventory
       WHERE id = $1
       `,
@@ -2374,7 +2384,7 @@ export async function getInventoryById(id) {
   return (
     db
       .prepare(
-        "SELECT id, make, model, year, price, mileage, transmission, fuel_type, color, status, featured, created_at, updated_at FROM inventory WHERE id = ?"
+        "SELECT id, make, model, year, price, mileage, transmission, fuel_type, vehicle_type, color, status, featured, created_at, updated_at FROM inventory WHERE id = ?"
       )
       .get(Number(id)) || null
   );
@@ -2387,10 +2397,10 @@ export async function createInventoryUnit(input) {
     const result = await pgPool.query(
       `
       INSERT INTO inventory (
-        make, model, year, price, mileage, transmission, fuel_type, color, status, featured, created_at, updated_at
+        make, model, year, price, mileage, transmission, fuel_type, vehicle_type, color, status, featured, created_at, updated_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-      RETURNING id, make, model, year, price, mileage, transmission, fuel_type, color, status, featured, created_at, updated_at
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      RETURNING id, make, model, year, price, mileage, transmission, fuel_type, vehicle_type, color, status, featured, created_at, updated_at
     `,
       [
         String(input.make || "").trim(),
@@ -2400,6 +2410,7 @@ export async function createInventoryUnit(input) {
         Number(input.mileage),
         String(input.transmission || "").trim(),
         String(input.fuel_type || "").trim(),
+        String(input.vehicle_type || "Sedan").trim(),
         String(input.color || "").trim(),
         String(input.status || "available").trim(),
         Number(input.featured) ? 1 : 0,
@@ -2417,9 +2428,9 @@ export async function createInventoryUnit(input) {
   db.prepare(
     `
       INSERT INTO inventory (
-        id, make, model, year, price, mileage, transmission, fuel_type, color, status, featured, created_at, updated_at
+        id, make, model, year, price, mileage, transmission, fuel_type, vehicle_type, color, status, featured, created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
   ).run(
     nextId,
@@ -2430,6 +2441,7 @@ export async function createInventoryUnit(input) {
     Number(input.mileage),
     String(input.transmission || "").trim(),
     String(input.fuel_type || "").trim(),
+    String(input.vehicle_type || "Sedan").trim(),
     String(input.color || "").trim(),
     String(input.status || "available").trim(),
     Number(input.featured) ? 1 : 0,
@@ -2452,6 +2464,7 @@ export async function updateInventoryUnit(id, input) {
     mileage: input.mileage ?? existing.mileage,
     transmission: input.transmission != null ? String(input.transmission).trim() : existing.transmission,
     fuel_type: input.fuel_type != null ? String(input.fuel_type).trim() : existing.fuel_type,
+    vehicle_type: input.vehicle_type != null ? String(input.vehicle_type).trim() : existing.vehicle_type,
     color: input.color != null ? String(input.color).trim() : existing.color,
     status: input.status != null ? String(input.status).trim() : existing.status,
     featured: input.featured ?? existing.featured
@@ -2462,9 +2475,9 @@ export async function updateInventoryUnit(id, input) {
     const result = await pgPool.query(
       `
       UPDATE inventory
-      SET make = $1, model = $2, year = $3, price = $4, mileage = $5, transmission = $6, fuel_type = $7, color = $8, status = $9, featured = $10, updated_at = $11
-      WHERE id = $12
-      RETURNING id, make, model, year, price, mileage, transmission, fuel_type, color, status, featured, created_at, updated_at
+      SET make = $1, model = $2, year = $3, price = $4, mileage = $5, transmission = $6, fuel_type = $7, vehicle_type = $8, color = $9, status = $10, featured = $11, updated_at = $12
+      WHERE id = $13
+      RETURNING id, make, model, year, price, mileage, transmission, fuel_type, vehicle_type, color, status, featured, created_at, updated_at
       `,
       [
         next.make,
@@ -2474,6 +2487,7 @@ export async function updateInventoryUnit(id, input) {
         Number(next.mileage),
         next.transmission,
         next.fuel_type,
+        next.vehicle_type || "Sedan",
         next.color,
         next.status,
         Number(next.featured) ? 1 : 0,
@@ -2487,7 +2501,7 @@ export async function updateInventoryUnit(id, input) {
   db.prepare(
     `
       UPDATE inventory
-      SET make = ?, model = ?, year = ?, price = ?, mileage = ?, transmission = ?, fuel_type = ?, color = ?, status = ?, featured = ?, updated_at = ?
+      SET make = ?, model = ?, year = ?, price = ?, mileage = ?, transmission = ?, fuel_type = ?, vehicle_type = ?, color = ?, status = ?, featured = ?, updated_at = ?
       WHERE id = ?
     `
   ).run(
@@ -2498,6 +2512,7 @@ export async function updateInventoryUnit(id, input) {
     Number(next.mileage),
     next.transmission,
     next.fuel_type,
+    next.vehicle_type || "Sedan",
     next.color,
     next.status,
     Number(next.featured) ? 1 : 0,
