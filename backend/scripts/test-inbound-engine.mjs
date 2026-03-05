@@ -66,6 +66,12 @@ async function run() {
   }
 
   {
+    const r = await ask(`test:${runId}:ambiguous_menu`, "twilio_whatsapp", "ok");
+    expectAny(r.reply, [/buscar un carro/i, /agendar una cita/i], "ambiguous_menu");
+    results.push("ambiguous_menu");
+  }
+
+  {
     const sid = `test:${runId}:create_appt`;
     await ask(sid, "meta_whatsapp", "quiero cita manana 11am");
     await ask(sid, "meta_whatsapp", "me llamo luis");
@@ -137,6 +143,26 @@ async function run() {
   }
 
   {
+    const sid = `test:${runId}:resume_after_topic_switch`;
+    await ask(sid, "meta_whatsapp", "quiero cita manana 3pm");
+    const r1 = await ask(sid, "meta_whatsapp", "me ayuda a buscar un carro");
+    expectAny(r1.reply, [/sedan|suv|pickup/i], "resume_after_topic_switch_inventory_reply");
+    expectAny(r1.reply, [/seguimos con la cita|si\/no/i], "resume_after_topic_switch_prompt");
+    const r2 = await ask(sid, "meta_whatsapp", "si");
+    expectAny(r2.reply, [/nombre|fecha y hora|tipo de carro/i], "resume_after_topic_switch_continue");
+    results.push("resume_after_topic_switch");
+  }
+
+  {
+    const sid = `test:${runId}:resume_release_on_second_interrupt`;
+    await ask(sid, "twilio_whatsapp", "quiero cita manana 11am");
+    await ask(sid, "twilio_whatsapp", "donde estan");
+    const r = await ask(sid, "twilio_whatsapp", "tienen mecanico");
+    expectAny(r.reply, [/que necesitas ahora|1\)\s*buscar carro|2\)\s*agendar cita/i], "resume_release_on_second_interrupt");
+    results.push("resume_release_on_second_interrupt");
+  }
+
+  {
     const sid = `test:${runId}:affirmation_response`;
     const seedSid = `test:${runId}:affirmation_seed`;
     await ask(seedSid, "meta_whatsapp", "quiero cita manana 3pm");
@@ -201,7 +227,7 @@ async function run() {
   {
     const sid = `test:${runId}:no_openai_fallback`;
     const r = await ask(sid, "meta_whatsapp", "necesito ayuda general de compra");
-    expectAny(r.reply, [/alta demanda/i, /down payment/i, /suv|sedan|pickup/i], "no_openai_key_fallback");
+    expectAny(r.reply, [/alta demanda/i, /suv|sedan|pickup/i], "no_openai_key_fallback");
     results.push("no_openai_key_fallback");
   }
 

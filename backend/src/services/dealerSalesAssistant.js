@@ -88,10 +88,6 @@ const BUSINESS_HOURS = {
 
 const DAY_INDEX_TO_SPANISH = ["domingo", "lunes", "martes", "miercoles", "jueves", "viernes", "sabado"];
 
-const DEALER_GENERIC_MESSAGE =
-  "🚗 Empire Rey Auto Sales | Louisville, KY\n" +
-  "Aprobacion rapida, financiamiento flexible y opciones reales para que salgas manejando.";
-const VIRTUAL_ASSISTANT_LINE = "Soy el asistente virtual de Empire Rey y te puedo ayudar en todo.";
 const OPENING_PROMO_MESSAGE =
   "Hola 👋 Soy el asistente de Empire Rey Auto Sales.\n\n" +
   "¿En qué te ayudo hoy?\n\n" +
@@ -107,7 +103,7 @@ const REY_CONTACT_REPLY =
 const MECHANIC_CONTACT_REPLY =
   "Si, tambien ofrecemos servicio mecanico.\n" + "Pronto tendremos esa informacion disponible.";
 const DEALER_ADDRESS_REPLY = "Estamos en 3510 Dixie Hwy, Louisville, Kentucky, USA.";
-const DEALER_PHONES_REPLY = "Puedes llamarnos al (502) 576-8116 o (502) 780-1096.";
+const DEALER_PHONES_REPLY = "Puedes comunicarte con Rey al +1 (502) 576-8116.";
 
 const leadMemory = {
   model: null,
@@ -232,16 +228,20 @@ export function applyFirstTouchPolicy({ message, context = {}, aiResult }) {
 
   if (isGenericGreetingMessage(message)) {
     aiResult.reply = OPENING_PROMO_MESSAGE;
+    aiResult.updatedContext = {
+      ...baseUpdatedContext,
+      assistantIntroSent: true,
+      assistantIntroSentAt: new Date().toISOString()
+    };
+    return aiResult;
   } else {
-    aiResult.reply = `${DEALER_GENERIC_MESSAGE}\n\n${VIRTUAL_ASSISTANT_LINE}\n\n${aiResult.reply}`;
+    aiResult.updatedContext = {
+      ...baseUpdatedContext,
+      assistantIntroSent: Boolean(baseUpdatedContext.assistantIntroSent || context?.assistantIntroSent),
+      assistantIntroSentAt: baseUpdatedContext.assistantIntroSentAt || context?.assistantIntroSentAt || null
+    };
+    return aiResult;
   }
-
-  aiResult.updatedContext = {
-    ...baseUpdatedContext,
-    assistantIntroSent: true,
-    assistantIntroSentAt: new Date().toISOString()
-  };
-  return aiResult;
 }
 
 function containsSexualOrAbusive(text) {
@@ -393,15 +393,14 @@ function asksHowToApply(text) {
 function buildCheapCarFastpath(context, extracted) {
   const intent = "buying_interest";
   const reply =
-    "Perfecto ✅ Te ayudo con opciones economicas (incluyendo unidades por debajo de $6,000 cuando haya).\n" +
+    "Perfecto. Te ayudo con opciones economicas (incluyendo unidades por debajo de $6,000 cuando haya).\n" +
     "Trabajamos con ITIN/ID y credito bajo.\n" +
     "Que prefieres: Sedan, SUV o Pickup?\n" +
-    "Y cuanto tienes para down payment aprox?\n" +
-    "Con eso te separo opciones y te agendo hoy o manana.";
+    "Con eso te separo opciones y te propongo visita.";
 
   const updatedContext = mergeContext(context, extracted, intent);
   const entities = buildEntitySnapshot(extracted, updatedContext);
-  const skill = { stage: "cheap_car", nextObjective: "Calificar tipo de unidad y pago inicial", confidence: 0.99 };
+  const skill = { stage: "cheap_car", nextObjective: "Calificar tipo de unidad y cerrar visita", confidence: 0.99 };
 
   return {
     reply,
@@ -430,15 +429,14 @@ function buildBusinessFaqFastpath(message, context, extracted) {
   if (asksForItinOrIdDocs(safeMessage)) {
     reply =
       "Si, trabajamos con ITIN o ID y tambien con credito bajo/sin credito.\n" +
-      "Perfecto ✅ Que prefieres: Sedan, SUV o Pickup?\n" +
-      "Y cuanto tienes para down payment aprox para avanzar a cita?";
-    skill = { stage: "faq_docs", nextObjective: "Calificar necesidad y presupuesto", confidence: 0.99 };
+      "Perfecto. Que prefieres: Sedan, SUV o Pickup?";
+    skill = { stage: "faq_docs", nextObjective: "Calificar necesidad de unidad", confidence: 0.99 };
   } else if (asksForLowOrNoCredit(safeMessage)) {
     reply =
       "No necesitas credito perfecto. Revisamos opciones segun tu caso.\n" +
-      "Primero: que tipo de carro buscas (Sedan, SUV o Pickup) y cuanto tienes para down payment?\n" +
-      "Con eso te separo opciones y te agendo hoy o manana.";
-    skill = { stage: "faq_credit", nextObjective: "Capturar down payment y pago objetivo", confidence: 0.99 };
+      "Primero: que tipo de carro buscas (Sedan, SUV o Pickup)?\n" +
+      "Con eso te separo opciones y te agendo visita.";
+    skill = { stage: "faq_credit", nextObjective: "Calificar unidad y visita", confidence: 0.99 };
   } else if (asksForLocation(safeMessage)) {
     reply = `${DEALER_ADDRESS_REPLY}\nListo. Te agendo hoy o manana para ver opciones?`;
     skill = { stage: "faq_location", nextObjective: "Llevar a visita en dealer", confidence: 0.99 };
@@ -450,7 +448,7 @@ function buildBusinessFaqFastpath(message, context, extracted) {
   } else if (asksForWeeklyPayments(safeMessage)) {
     reply =
       "Si, manejamos pagos semanales segun unidad y perfil.\n" +
-      "Primero te ubico el carro: Sedan, SUV o Pickup y tu down payment aprox.\n" +
+      "Primero te ubico el carro: Sedan, SUV o Pickup.\n" +
       "Luego afinamos pago semanal y te agendo cita.";
     skill = { stage: "faq_payments", nextObjective: "Definir rango de pago", confidence: 0.99 };
   } else if (asksForTradeIn(safeMessage)) {
@@ -458,8 +456,8 @@ function buildBusinessFaqFastpath(message, context, extracted) {
     skill = { stage: "faq_trade_in", nextObjective: "Capturar datos del trade-in", confidence: 0.99 };
   } else if (asksHowToApply(safeMessage)) {
     reply =
-      "Para aplicar rapido, llama a Rey al 502 576 8116 o 502 780 1096.\n" +
-      "Si prefieres por aqui: dime Sedan, SUV o Pickup y tu down payment para agendarte.";
+      "Para aplicar rapido, puedes comunicarte con Rey al +1 (502) 576-8116.\n" +
+      "Si prefieres por aqui: dime Sedan, SUV o Pickup y te ayudo a agendarte.";
     skill = { stage: "faq_apply", nextObjective: "Conectar llamada con asesor", confidence: 0.99 };
     suggestions = ["Confirmar si desea llamada o visita hoy."];
   } else if (asksForMechanicContact(safeMessage)) {
@@ -689,7 +687,7 @@ function buildNegotiationReply(model, budget) {
 
 function buildInquiryReply(entities) {
   if (entities.questionType === "financing") {
-    return "Si, manejamos financiamiento con distintas financieras y bancos. Podemos revisar enganche, plazo y mensualidad estimada en minutos.";
+    return "Si, manejamos financiamiento con distintas financieras y bancos. Podemos revisar tu perfil, plazo y pagos estimados en minutos.";
   }
 
   if (entities.questionType === "shipping") {
@@ -1217,7 +1215,7 @@ export async function generateDealerResponse(message, context = {}) {
     const minBrandPrice = await getMinAvailablePriceByMake(brand);
 
     if (minBrandPrice && entities.budget < minBrandPrice) {
-      reply = `Perfecto, gracias por compartir tu presupuesto de $${entities.budget.toLocaleString("en-US")}. En ${brand} las opciones arrancan cerca de $${minBrandPrice.toLocaleString("en-US")}, pero podemos llegar con financiamiento, enganche flexible o mostrarte alternativas cercanas a tu rango. Prefieres que te cotice mensualidad o que te ensene opciones mas economicas?`;
+      reply = `Perfecto, gracias por compartir tu presupuesto de $${entities.budget.toLocaleString("en-US")}. En ${brand} las opciones arrancan cerca de $${minBrandPrice.toLocaleString("en-US")}, pero podemos revisar financiamiento o mostrarte alternativas cercanas a tu rango. Prefieres que te ensene opciones mas economicas o una recomendacion para visitar hoy?`;
       return { reply, updatedContext };
     }
   }
@@ -1234,7 +1232,7 @@ export async function generateDealerResponse(message, context = {}) {
   }
 
   if (entities.questionType === "financing") {
-    reply = "Si, manejamos financiamiento con aprobacion rapida. Quieres que te calcule una mensualidad estimada con tu enganche ideal?";
+    reply = "Si, manejamos financiamiento con aprobacion rapida. Quieres que te calcule una mensualidad estimada segun la unidad que buscas?";
   } else if (entities.questionType === "shipping") {
     reply = "Si hacemos envio; depende de ciudad y distancia. A que ZIP o ciudad lo enviariamos para cotizar exacto?";
   } else {
@@ -1649,9 +1647,9 @@ BEHAVIOR RULES
 
 FAQ PRIORITY RULES (MANDATORY)
 - If user asks about ITIN or ID, answer directly: Empire Rey works with ITIN or ID and also low/no-credit customers.
-- If user asks about low/no credit, answer directly first, then ask down payment and weekly payment range.
+- If user asks about low/no credit, answer directly first, then ask vehicle type and if they want to visit.
 - If user asks location, answer exactly: 3510 Dixie Hwy, Louisville, Kentucky, USA.
-- If user asks phones, answer exactly: (502) 576-8116 and (502) 780-1096.
+- If user asks phones, answer exactly: +1 (502) 576-8116.
 - If user asks weekly payments, confirm weekly plans are available by unit/profile.
 - If user asks trade-in, confirm used car as part of payment and ask year/make/mileage.
 - If user asks mechanic service, confirm mechanic service is available.
