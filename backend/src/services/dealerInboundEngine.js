@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { applyFirstTouchPolicy, handleDealerMessage } from "./dealerSalesAssistant.js";
+import { handleDealerMessage } from "./dealerSalesAssistant.js";
 import { hasAnyLlmProvider } from "./openaiClient.js";
 import { getDealerSession, getLearningState, saveDealerTurn } from "./dealerSessionStore.js";
 import {
@@ -28,12 +28,12 @@ const DEALER_ADDRESS_TEXT = "3510 Dixie Hwy, Louisville, KY 40216";
 const MECHANIC_CONTACT_REPLY =
   "Si, contamos con servicio mecanico. Pronto tendremos esa informacion disponible.";
 const MENU_ENTRY_REPLY =
-  "Hola 👋 Soy el asistente de Empire Rey Auto Sales.\n\n" +
-  "¿En que te ayudo hoy?\n\n" +
-  "1️⃣ Buscar un carro\n" +
-  "2️⃣ Agendar una cita\n" +
-  "3️⃣ Comunicarte con Rey\n" +
-  "4️⃣ Comunicarte con el mecanico\n\n" +
+  "Hola \uD83D\uDC4B Soy el asistente de Empire Rey Auto Sales.\n\n" +
+  "\u00BFEn que te ayudo hoy?\n\n" +
+  "1\uFE0F\u20E3 Buscar un carro\n" +
+  "2\uFE0F\u20E3 Agendar una cita\n" +
+  "3\uFE0F\u20E3 Comunicarte con Rey\n" +
+  "4\uFE0F\u20E3 Comunicarte con el mecanico\n\n" +
   "Escribe el numero o dime que necesitas.";
 const BUSINESS_HOURS_REPLY =
   "Trabajamos de lunes a sabado de 11:00 AM a 8:00 PM y domingo de 11:00 AM a 4:00 PM. Si quieres, te agendo cita para visitarnos.";
@@ -256,14 +256,76 @@ function formatOptionLine(value) {
   return date.toLocaleString("en-US", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
+const MONTHS_MAP = {
+  enero: 0, january: 0, febrero: 1, february: 1, marzo: 2, march: 2, abril: 3, april: 3,
+  mayo: 4, may: 4, junio: 5, june: 5, julio: 6, july: 6, agosto: 7, august: 7,
+  septiembre: 8, september: 8, octubre: 9, october: 9, noviembre: 10, november: 10,
+  diciembre: 11, december: 11
+};
+
+function parseExplicitCalendarDate(text) {
+  const raw = String(text || '').toLowerCase();
+  const iso = raw.match(/\b(20\d{2})-(\d{1,2})-(\d{1,2})\b/);
+  if (iso) {
+    const y = Number(iso[1]);
+    const m = Number(iso[2]) - 1;
+    const d = Number(iso[3]);
+    if (y >= 2000 && m >= 0 && m <= 11 && d >= 1 && d <= 31) return { year: y, month: m, day: d };
+  }
+
+  const slash = raw.match(/\b(\d{1,2})\/(\d{1,2})(?:\/(20\d{2}))?\b/);
+  if (slash) {
+    const d = Number(slash[1]);
+    const m = Number(slash[2]) - 1;
+    const y = Number(slash[3] || new Date().getFullYear());
+    if (y >= 2000 && m >= 0 && m <= 11 && d >= 1 && d <= 31) return { year: y, month: m, day: d };
+  }
+
+  const named = raw.match(/\b(?:el\s+|dia\s+)?(\d{1,2})(?:\s+de)?\s+(enero|january|febrero|february|marzo|march|abril|april|mayo|may|junio|june|julio|july|agosto|august|septiembre|september|octubre|october|noviembre|november|diciembre|december)(?:\s+de\s+(20\d{2}))?\b/);
+  if (named) {
+    const d = Number(named[1]);
+    const m = MONTHS_MAP[String(named[2] || '').toLowerCase()];
+    const y = Number(named[3] || new Date().getFullYear());
+    if (Number.isFinite(m) && y >= 2000 && d >= 1 && d <= 31) return { year: y, month: m, day: d };
+  }
+
+  const dayOnly = raw.match(/\b(?:el\s+|dia\s+)?(\d{1,2})\b/);
+  if (dayOnly && /\ba\s*las\b|\bam\b|\bpm\b|:\d{2}/.test(raw)) {
+    const d = Number(dayOnly[1]);
+    if (d >= 1 && d <= 31) {
+      const now = new Date();
+      let y = now.getFullYear();
+      let m = now.getMonth();
+      if (d < now.getDate()) {
+        const next = new Date(now);
+        next.setMonth(next.getMonth() + 1);
+        y = next.getFullYear();
+        m = next.getMonth();
+      }
+      return { year: y, month: m, day: d };
+    }
+  }
+
+  return null;
+}
+
 function parseRequestedDateTime(text) {
-  const raw = String(text || "").toLowerCase();
-  const dayOffset = /manana|mañana|ma\?ana|tomorrow/.test(raw) ? 1 : /hoy|today/.test(raw) ? 0 : null;
+  const raw = String(text || '').toLowerCase();
   const parsedTime = parseRequestedTime(raw);
-  if (dayOffset === null || !parsedTime) return null;
+  if (!parsedTime) return null;
+
+  const explicitDate = parseExplicitCalendarDate(raw);
+  const dayOffset = /manana|mañana|ma\?ana|tomorrow/.test(raw) ? 1 : /hoy|today/.test(raw) ? 0 : null;
 
   const date = new Date();
-  date.setDate(date.getDate() + dayOffset);
+  if (explicitDate) {
+    date.setFullYear(explicitDate.year, explicitDate.month, explicitDate.day);
+  } else if (dayOffset !== null) {
+    date.setDate(date.getDate() + dayOffset);
+  } else {
+    return null;
+  }
+
   date.setHours(parsedTime.hour24, parsedTime.minute, 0, 0);
   return date.toISOString();
 }
@@ -336,6 +398,12 @@ function isFourChoice(text) {
 
 function asksReyDirect(text) {
   return /(hablar con rey|comunicar.*rey|conectar.*rey|dueno|dueño|owner|rey)/i.test(String(text || ""));
+}
+
+function asksInventoryTopicSwitch(text) {
+  return /(buscar.*carro|buscar.*auto|quiero ver carros|quiero ver autos|carros disponibles|inventario|me ayuda a buscar un carro|me ayudas a buscar un carro)/i.test(
+    String(text || '')
+  );
 }
 
 function isMenuTrigger(text) {
@@ -453,13 +521,7 @@ function markMenuIntroSent(session) {
 
 function applyFirstTouchToReply({ session, incomingText, reply }) {
   if (!reply) return reply;
-  const aiResult = {
-    reply,
-    updatedContext: session.context || {}
-  };
-  applyFirstTouchPolicy({ message: incomingText, context: session.context || {}, aiResult });
-  session.context = aiResult.updatedContext || session.context || {};
-  return aiResult.reply;
+  return reply;
 }
 
 async function handleAppointmentFlow({ sessionId, incomingText, lead = null }) {
@@ -847,6 +909,56 @@ export async function processInboundDealerMessage({
     !isActiveAppointmentFlow &&
     (isOption2 || /agendar|agendo|quiero cita|crear cita|programar cita|appointment|test drive|prueba de manejo/i.test(incomingText))
   ) {
+    const initialRequestedAt = detectedDateTime || null;
+    const initialName = detectedName || null;
+    if (initialName) {
+      await upsertLeadProfile({ sessionId, name: initialName, lastMessageAt: new Date().toISOString() });
+    }
+    if (initialRequestedAt) {
+      await upsertLeadProfile({
+        sessionId,
+        datePref: initialRequestedAt,
+        status: "APPT_PENDING",
+        lastMessageAt: new Date().toISOString()
+      });
+    }
+
+    if (initialName && initialRequestedAt) {
+      setSimpleAppointmentFlow(session, "simple_need_vehicle_type", { requestedAt: initialRequestedAt });
+      const reply = applyFirstTouchToReply({
+        session,
+        incomingText,
+        reply: `Perfecto, ${initialName}. Ya tengo tu fecha y hora. Que tipo de carro buscas? 1) Sedan 2) SUV 3) Pickup`
+      });
+      await persistIncomingUserMessage({ sessionId, userMessage: incomingText, source: "menu-option-2" });
+      await persistOutgoingAssistantMessage({
+        sessionId,
+        assistantMessage: reply,
+        source: "menu-option-2",
+        intent: "appointment_flow"
+      });
+      await emitEvent({ action: "menu_option_2", intent: "appointment_flow", activeFlow: "appointment", missingFields: ["vehicle_type"] });
+      return { reply, mediaUrl: null, shouldReply: true, shouldNotifyInboundPush: false, kind: "menu-option-2" };
+    }
+
+    if (initialRequestedAt) {
+      setSimpleAppointmentFlow(session, "simple_need_name", { requestedAt: initialRequestedAt });
+      const reply = applyFirstTouchToReply({
+        session,
+        incomingText,
+        reply: "Perfecto. Ya tengo la fecha y hora. Para agendar tu cita, cual es tu nombre?"
+      });
+      await persistIncomingUserMessage({ sessionId, userMessage: incomingText, source: "menu-option-2" });
+      await persistOutgoingAssistantMessage({
+        sessionId,
+        assistantMessage: reply,
+        source: "menu-option-2",
+        intent: "appointment_flow"
+      });
+      await emitEvent({ action: "menu_option_2", intent: "appointment_flow", activeFlow: "appointment", missingFields: ["name"] });
+      return { reply, mediaUrl: null, shouldReply: true, shouldNotifyInboundPush: false, kind: "menu-option-2" };
+    }
+
     setSimpleAppointmentFlow(session, "simple_need_name");
     const reply = applyFirstTouchToReply({
       session,
@@ -899,6 +1011,73 @@ export async function processInboundDealerMessage({
   }
 
   if (isSimpleAppointmentStage) {
+    if (isCancelAction(incomingText)) {
+      clearAppointmentFlow(session);
+      const reply = applyFirstTouchToReply({
+        session,
+        incomingText,
+        reply: "Listo, cancele tu proceso de cita. Si quieres, te ayudo a empezar de nuevo cuando gustes."
+      });
+      await persistIncomingUserMessage({ sessionId, userMessage: incomingText, source: "appointment-simple-cancel" });
+      await persistOutgoingAssistantMessage({ sessionId, assistantMessage: reply, source: "appointment-simple-cancel", intent: "appointment_flow" });
+      await emitEvent({ action: "appointment_simple_cancel", intent: "appointment_flow", activeFlow: null });
+      return { reply, mediaUrl: null, shouldReply: true, shouldNotifyInboundPush: false, kind: "appointment-simple-cancel" };
+    }
+
+    if (asksInventoryTopicSwitch(incomingText) && !hasAppointmentSignal(incomingText)) {
+      clearAppointmentFlow(session);
+      const reply = applyFirstTouchToReply({
+        session,
+        incomingText,
+        reply: "Perfecto. Que tipo de carro buscas? Sedan, SUV o Pickup?"
+      });
+      await persistIncomingUserMessage({ sessionId, userMessage: incomingText, source: "appointment-topic-switch" });
+      await persistOutgoingAssistantMessage({
+        sessionId,
+        assistantMessage: reply,
+        source: "appointment-topic-switch",
+        intent: "buying_interest"
+      });
+      await emitEvent({ action: "appointment_topic_switch", intent: "buying_interest", activeFlow: null });
+      return { reply, mediaUrl: null, shouldReply: true, shouldNotifyInboundPush: false, kind: "appointment-topic-switch" };
+    }
+
+    if (asksReyDirect(incomingText) && !hasAppointmentSignal(incomingText)) {
+      clearAppointmentFlow(session);
+      const reply = applyFirstTouchToReply({
+        session,
+        incomingText,
+        reply: "Claro. Puedes comunicarte con Rey al +1 (502) 576-8116."
+      });
+      await persistIncomingUserMessage({ sessionId, userMessage: incomingText, source: "appointment-topic-switch" });
+      await persistOutgoingAssistantMessage({
+        sessionId,
+        assistantMessage: reply,
+        source: "appointment-topic-switch",
+        intent: "handoff"
+      });
+      await emitEvent({ action: "appointment_topic_switch", intent: "handoff", activeFlow: null });
+      return { reply, mediaUrl: null, shouldReply: true, shouldNotifyInboundPush: true, kind: "appointment-topic-switch" };
+    }
+
+    if (asksMechanic(incomingText) && !hasAppointmentSignal(incomingText)) {
+      clearAppointmentFlow(session);
+      const reply = applyFirstTouchToReply({
+        session,
+        incomingText,
+        reply: "Claro. Si, contamos con servicio mecanico. Pronto tendremos esa informacion disponible."
+      });
+      await persistIncomingUserMessage({ sessionId, userMessage: incomingText, source: "appointment-topic-switch" });
+      await persistOutgoingAssistantMessage({
+        sessionId,
+        assistantMessage: reply,
+        source: "appointment-topic-switch",
+        intent: "service_info"
+      });
+      await emitEvent({ action: "appointment_topic_switch", intent: "service_info", activeFlow: null });
+      return { reply, mediaUrl: null, shouldReply: true, shouldNotifyInboundPush: true, kind: "appointment-topic-switch" };
+    }
+
     if (appointmentStage === "simple_need_name") {
       if (!detectedName) {
         const reply = applyFirstTouchToReply({
@@ -913,11 +1092,25 @@ export async function processInboundDealerMessage({
       }
 
       await upsertLeadProfile({ sessionId, name: detectedName, lastMessageAt: new Date().toISOString() });
+      const alreadyRequestedAt = detectedDateTime || session?.context?.appointmentFlow?.requestedAt || null;
+      if (alreadyRequestedAt) {
+        setSimpleAppointmentFlow(session, "simple_need_vehicle_type", { requestedAt: alreadyRequestedAt });
+        const reply = applyFirstTouchToReply({
+          session,
+          incomingText,
+          reply: `Perfecto, ${detectedName}. Ya tengo fecha y hora. Que tipo de carro buscas? 1) Sedan 2) SUV 3) Pickup`
+        });
+        await persistIncomingUserMessage({ sessionId, userMessage: incomingText, source: "appointment-simple" });
+        await persistOutgoingAssistantMessage({ sessionId, assistantMessage: reply, source: "appointment-simple", intent: "appointment_flow" });
+        await emitEvent({ action: "appointment_simple", intent: "appointment_flow", activeFlow: "appointment", missingFields: ["vehicle_type"] });
+        return { reply, mediaUrl: null, shouldReply: true, shouldNotifyInboundPush: false, kind: "appointment-simple" };
+      }
+
       setSimpleAppointmentFlow(session, "simple_need_datetime");
       const reply = applyFirstTouchToReply({
         session,
         incomingText,
-        reply: `Perfecto, ${detectedName}. Que dia y hora te gustaria venir? (ejemplo: manana 11am)`
+        reply: `Perfecto, ${detectedName}. Que fecha y hora te gustaria venir? (ejemplo: 7 de marzo 8am o manana 11am)`
       });
       await persistIncomingUserMessage({ sessionId, userMessage: incomingText, source: "appointment-simple" });
       await persistOutgoingAssistantMessage({ sessionId, assistantMessage: reply, source: "appointment-simple", intent: "appointment_flow" });
@@ -930,7 +1123,7 @@ export async function processInboundDealerMessage({
         const reply = applyFirstTouchToReply({
           session,
           incomingText,
-          reply: "Necesito dia y hora para agendar. Ejemplo: hoy 4pm o manana 11am."
+          reply: "Necesito fecha y hora para agendar. Ejemplo: 7 de marzo 8am o manana 11am."
         });
         await persistIncomingUserMessage({ sessionId, userMessage: incomingText, source: "appointment-simple" });
         await persistOutgoingAssistantMessage({ sessionId, assistantMessage: reply, source: "appointment-simple", intent: "appointment_flow" });
@@ -976,7 +1169,7 @@ export async function processInboundDealerMessage({
         const reply = applyFirstTouchToReply({
           session,
           incomingText,
-          reply: "Se perdio el horario. Dime de nuevo dia y hora (ejemplo: manana 11am)."
+          reply: "Se perdio el horario. Dime de nuevo fecha y hora (ejemplo: 7 de marzo 8am o manana 11am)."
         });
         await persistIncomingUserMessage({ sessionId, userMessage: incomingText, source: "appointment-simple" });
         await persistOutgoingAssistantMessage({ sessionId, assistantMessage: reply, source: "appointment-simple", intent: "appointment_flow" });
@@ -1049,6 +1242,60 @@ export async function processInboundDealerMessage({
   }
 
   if (isActiveAppointmentFlow) {
+    if (asksInventoryTopicSwitch(incomingText) && !hasAppointmentSignal(incomingText)) {
+      clearAppointmentFlow(session);
+      const reply = applyFirstTouchToReply({
+        session,
+        incomingText,
+        reply: "Perfecto. Que tipo de carro buscas? Sedan, SUV o Pickup?"
+      });
+      await persistIncomingUserMessage({ sessionId, userMessage: incomingText, source: "appointment-topic-switch" });
+      await persistOutgoingAssistantMessage({
+        sessionId,
+        assistantMessage: reply,
+        source: "appointment-topic-switch",
+        intent: "buying_interest"
+      });
+      await emitEvent({ action: "appointment_topic_switch", intent: "buying_interest", activeFlow: null });
+      return { reply, mediaUrl: null, shouldReply: true, shouldNotifyInboundPush: false, kind: "appointment-topic-switch" };
+    }
+
+    if (asksReyDirect(incomingText) && !hasAppointmentSignal(incomingText)) {
+      clearAppointmentFlow(session);
+      const reply = applyFirstTouchToReply({
+        session,
+        incomingText,
+        reply: "Claro. Puedes comunicarte con Rey al +1 (502) 576-8116."
+      });
+      await persistIncomingUserMessage({ sessionId, userMessage: incomingText, source: "appointment-topic-switch" });
+      await persistOutgoingAssistantMessage({
+        sessionId,
+        assistantMessage: reply,
+        source: "appointment-topic-switch",
+        intent: "handoff"
+      });
+      await emitEvent({ action: "appointment_topic_switch", intent: "handoff", activeFlow: null });
+      return { reply, mediaUrl: null, shouldReply: true, shouldNotifyInboundPush: true, kind: "appointment-topic-switch" };
+    }
+
+    if (asksMechanic(incomingText) && !hasAppointmentSignal(incomingText)) {
+      clearAppointmentFlow(session);
+      const reply = applyFirstTouchToReply({
+        session,
+        incomingText,
+        reply: "Claro. Si, contamos con servicio mecanico. Pronto tendremos esa informacion disponible."
+      });
+      await persistIncomingUserMessage({ sessionId, userMessage: incomingText, source: "appointment-topic-switch" });
+      await persistOutgoingAssistantMessage({
+        sessionId,
+        assistantMessage: reply,
+        source: "appointment-topic-switch",
+        intent: "service_info"
+      });
+      await emitEvent({ action: "appointment_topic_switch", intent: "service_info", activeFlow: null });
+      return { reply, mediaUrl: null, shouldReply: true, shouldNotifyInboundPush: true, kind: "appointment-topic-switch" };
+    }
+
     if (detectedPhone) {
       await upsertLeadProfile({
         sessionId,
